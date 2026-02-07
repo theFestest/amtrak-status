@@ -1,6 +1,29 @@
 [project]
-name = "placeholder"
+name = "amtrak-status"
 version = "0.1"
+description = "TUI Amtrak Status Tracker"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Michael"}]
+license = "Apache-2.0"
+classifiers = []
+dependencies = [
+
+]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "pytest"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[project.urls]
+Homepage = "https://github.com/theFestest/amtrak-status"
+Changelog = "https://github.com/theFestest/amtrak-status/releases"
+Issues = "https://github.com/theFestest/amtrak-status/issues"
+CI = "https://github.com/theFestest/amtrak-status/actions"
+
