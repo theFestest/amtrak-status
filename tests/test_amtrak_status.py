@@ -11,125 +11,11 @@ from rich.layout import Layout
 
 import amtrak_status.tracker as tracker
 
-
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture(autouse=True)
-def reset_globals():
-    """Reset all module-level globals between tests."""
-    tracker.COMPACT_MODE = False
-    tracker.STATION_FROM = None
-    tracker.STATION_TO = None
-    tracker.FOCUS_CURRENT = True
-    tracker.NOTIFY_STATIONS = set()
-    tracker.NOTIFY_ALL = False
-    tracker._notified_stations = set()
-    tracker._notifications_initialized = False
-    tracker.CONNECTION_STATION = None
-    tracker._last_successful_data = None
-    tracker._last_fetch_time = None
-    tracker._last_error = None
-    tracker._train_caches = {}
-    yield
-
-
-# =============================================================================
-# Test data helpers
-# =============================================================================
-
-
-def make_station(
-    code="TST",
-    name="Test Station",
-    status="",
-    sch_arr=None,
-    sch_dep=None,
-    arr=None,
-    dep=None,
-    platform="",
-):
-    """Build a station dict matching the API shape."""
-    return {
-        "code": code,
-        "name": name,
-        "status": status,
-        "schArr": sch_arr,
-        "schDep": sch_dep,
-        "arr": arr,
-        "dep": dep,
-        "platform": platform,
-    }
-
-
-def make_train(
-    train_num="42",
-    route_name="Pennsylvanian",
-    train_id="42-1",
-    stations=None,
-    velocity=45,
-    heading="E",
-    train_state="Active",
-    status_msg="On Time",
-    dest_name="New York Penn",
-):
-    """Build a train dict matching the API shape."""
-    return {
-        "trainNum": train_num,
-        "routeName": route_name,
-        "trainID": train_id,
-        "stations": stations or [],
-        "velocity": velocity,
-        "heading": heading,
-        "trainState": train_state,
-        "statusMsg": status_msg,
-        "destName": dest_name,
-    }
-
-
-def ts_ms(dt: datetime) -> int:
-    """Convert datetime to Unix timestamp in milliseconds (API format)."""
-    return int(dt.timestamp() * 1000)
-
-
-# A fixed "now" for deterministic time-based tests
-FIXED_NOW = datetime(2025, 3, 15, 14, 30, 0)
-
-
-def sample_journey_stations():
-    """A realistic 5-stop journey, train between stations 2 and 3."""
-    base = FIXED_NOW - timedelta(hours=3)
-    return [
-        make_station(
-            code="PGH", name="Pittsburgh", status="Departed",
-            sch_dep=ts_ms(base), dep=ts_ms(base + timedelta(minutes=2)),
-        ),
-        make_station(
-            code="GBG", name="Greensburg", status="Departed",
-            sch_arr=ts_ms(base + timedelta(hours=1)),
-            sch_dep=ts_ms(base + timedelta(hours=1, minutes=2)),
-            arr=ts_ms(base + timedelta(hours=1, minutes=5)),
-            dep=ts_ms(base + timedelta(hours=1, minutes=7)),
-        ),
-        make_station(
-            code="HBG", name="Harrisburg", status="Enroute",
-            sch_arr=ts_ms(base + timedelta(hours=3, minutes=30)),
-            sch_dep=ts_ms(base + timedelta(hours=3, minutes=35)),
-            arr=ts_ms(base + timedelta(hours=3, minutes=40)),
-            dep=ts_ms(base + timedelta(hours=3, minutes=45)),
-        ),
-        make_station(
-            code="PHL", name="Philadelphia", status="",
-            sch_arr=ts_ms(base + timedelta(hours=5)),
-            sch_dep=ts_ms(base + timedelta(hours=5, minutes=5)),
-        ),
-        make_station(
-            code="NYP", name="New York Penn", status="",
-            sch_arr=ts_ms(base + timedelta(hours=6, minutes=30)),
-        ),
-    ]
+# Shared helpers from conftest (imported explicitly for use in test code)
+from conftest import (
+    make_station, make_train, ts_ms, FIXED_NOW,
+    sample_journey_stations, render_to_text, journey_at_phase,
+)
 
 
 # =============================================================================
@@ -142,10 +28,12 @@ class TestParseTime:
         assert tracker.parse_time(None) is None
 
     def test_int_ms_timestamp(self):
-        # 2025-01-01 00:00:00 UTC = 1735689600 seconds
-        dt = tracker.parse_time(1735689600000)
+        # 2025-07-01 00:00:00 UTC — safely 2025 in all US timezones
+        ms = 1751328000000
+        dt = tracker.parse_time(ms)
         assert dt is not None
-        assert dt.year == 2025 or dt.year == 2024  # depends on local tz
+        assert dt.year == 2025
+        assert dt.month in (6, 7)  # June 30 or July 1 depending on local tz
 
     def test_float_ms_timestamp(self):
         dt = tracker.parse_time(1735689600000.0)
@@ -529,7 +417,7 @@ class TestCalculateProgress:
 class TestCalculatePositionBetweenStations:
     def test_normal_position(self):
         """Train departed station A, heading to station B."""
-        now = datetime.now()
+        now = FIXED_NOW
         dep_time = ts_ms(now - timedelta(minutes=30))
         arr_time = ts_ms(now + timedelta(minutes=30))
 
@@ -543,8 +431,8 @@ class TestCalculatePositionBetweenStations:
         last_code, next_code, progress, mins_remaining = result
         assert last_code == "A"
         assert next_code == "B"
-        assert 0.4 < progress < 0.6  # roughly 50%
-        assert 25 <= mins_remaining <= 35
+        assert progress == pytest.approx(0.5, abs=0.01)
+        assert mins_remaining == 30
 
     def test_no_departed_station(self):
         train = make_train(stations=[
@@ -560,7 +448,7 @@ class TestCalculatePositionBetweenStations:
         assert tracker.calculate_position_between_stations(train) is None
 
     def test_skips_cancelled_stations(self):
-        now = datetime.now()
+        now = FIXED_NOW
         dep_time = ts_ms(now - timedelta(minutes=20))
         arr_time = ts_ms(now + timedelta(minutes=40))
 
@@ -579,7 +467,7 @@ class TestCalculatePositionBetweenStations:
 
     def test_zero_duration(self):
         """When dep and arr times are the same, progress should be 1.0."""
-        now = datetime.now()
+        now = FIXED_NOW
         same_time = ts_ms(now - timedelta(minutes=5))
 
         train = make_train(stations=[
@@ -1116,7 +1004,7 @@ class TestFetchTrainData:
         cached_data = {"trainNum": "42", "stations": []}
         tracker._train_caches["42"] = {
             "data": cached_data,
-            "fetch_time": datetime.now(),
+            "fetch_time": FIXED_NOW,
             "error": None,
         }
 
@@ -1185,46 +1073,35 @@ class TestFetchStationSchedule:
 
 
 # =============================================================================
-# Rich Display Smoke Tests
+# Rich Display Tests
 # =============================================================================
 
 
 class TestBuildHeader:
-    def test_active_train(self):
-        train = make_train(stations=sample_journey_stations())
-        result = tracker.build_header(train)
-        assert isinstance(result, Panel)
-
-    def test_predeparture_train(self):
+    def test_predeparture_header_content(self):
         train = make_train(
-            train_state="Predeparture",
-            status_msg="",
+            train_state="Predeparture", status_msg="", velocity=0,
             stations=[make_station(code="PGH", status="", sch_dep=100)],
         )
-        result = tracker.build_header(train)
-        assert isinstance(result, Panel)
-
-    def test_late_status_styling(self):
-        train = make_train(status_msg="2 Hours Late", stations=sample_journey_stations())
-        result = tracker.build_header(train)
-        assert isinstance(result, Panel)
-
-    def test_on_time_status_styling(self):
-        train = make_train(status_msg="On Time", stations=sample_journey_stations())
-        result = tracker.build_header(train)
-        assert isinstance(result, Panel)
+        panel = tracker.build_header(train)
+        text = render_to_text(panel)
+        assert "Predeparture" in text
+        assert "Position:" not in text  # no position bar for predeparture
 
 
 class TestBuildProgressBar:
-    def test_normal(self):
+    def test_normal_shows_origin_and_dest(self):
         train = make_train(stations=sample_journey_stations())
-        result = tracker.build_progress_bar(train)
-        assert isinstance(result, Panel)
+        panel = tracker.build_progress_bar(train)
+        text = render_to_text(panel)
+        assert "Pittsburgh" in text
+        assert "Journey Progress" in text
 
-    def test_empty_stations(self):
+    def test_empty_stations_shows_no_data(self):
         train = make_train(stations=[])
-        result = tracker.build_progress_bar(train)
-        assert isinstance(result, Panel)
+        panel = tracker.build_progress_bar(train)
+        text = render_to_text(panel)
+        assert "No station data" in text
 
 
 class TestBuildStationsTable:
@@ -1289,50 +1166,20 @@ class TestBuildCompactDisplay:
         assert isinstance(result, Text)
 
 
-class TestBuildConnectionPanel:
-    def test_normal(self):
-        now = datetime.now()
-        train1 = make_train(
-            train_num="42", route_name="Pennsylvanian",
-            stations=[make_station(
-                code="PHL", name="Philadelphia", status="Enroute",
-                sch_arr=ts_ms(now + timedelta(hours=1)),
-                arr=ts_ms(now + timedelta(hours=1, minutes=5)),
-            )],
-        )
-        train2 = make_train(
-            train_num="178", route_name="Keystone",
-            stations=[make_station(
-                code="PHL", name="Philadelphia", status="",
-                sch_dep=ts_ms(now + timedelta(hours=2)),
-            )],
-        )
-        result = tracker.build_connection_panel(train1, train2, "PHL")
-        assert isinstance(result, Panel)
-
-
-class TestBuildErrorPanel:
-    def test_normal(self):
-        result = tracker.build_error_panel("Something went wrong")
-        assert isinstance(result, Panel)
-
-
-class TestBuildNotFoundPanel:
-    def test_normal(self):
-        result = tracker.build_not_found_panel("42")
-        assert isinstance(result, Panel)
-
-
 class TestBuildPredeparturePanel:
-    def test_normal(self):
-        result = tracker.build_predeparture_panel("42")
-        assert isinstance(result, Panel)
-
+    def test_content(self):
+        panel = tracker.build_predeparture_panel("42")
+        text = render_to_text(panel)
+        assert "#42" in text
+        assert "Awaiting Departure" in text
+        assert "Predeparture" in text
 
 class TestBuildPredepartureHeader:
-    def test_normal(self):
-        result = tracker.build_predeparture_header("42")
-        assert isinstance(result, Panel)
+    def test_content(self):
+        panel = tracker.build_predeparture_header("42")
+        text = render_to_text(panel)
+        assert "#42" in text
+        assert "Awaiting Departure" in text
 
 
 class TestBuildCompactTrainHeader:
@@ -1410,11 +1257,12 @@ class TestBuildDisplay:
 class TestBuildMultiTrainDisplay:
     @patch("amtrak_status.tracker.fetch_train_data_cached")
     def test_both_trains_valid(self, mock_fetch):
-        now = datetime.now()
+        now = FIXED_NOW
         train1 = make_train(
             train_num="42", route_name="Pennsylvanian",
             stations=[
-                make_station(code="PGH", status="Departed", sch_dep=ts_ms(now - timedelta(hours=3))),
+                make_station(code="PGH", status="Departed", sch_dep=ts_ms(now - timedelta(hours=3)),
+                             dep=ts_ms(now - timedelta(hours=3))),
                 make_station(code="PHL", status="Enroute",
                              sch_arr=ts_ms(now + timedelta(hours=1)),
                              arr=ts_ms(now + timedelta(hours=1))),
@@ -1618,3 +1466,152 @@ class TestTimezoneEdgeCases:
         # This comparison would raise TypeError in real code
         # The test documents that this is a bug — both should be consistent
         _ = naive < aware  # Should not raise if bug is fixed
+
+
+# =============================================================================
+# Cache and fetch coverage
+# =============================================================================
+
+
+class TestCacheExpiry:
+    @patch("amtrak_status.tracker.sleep")
+    @patch("amtrak_status.tracker.httpx.Client")
+    def test_stale_cache_not_used(self, mock_client_cls, mock_sleep):
+        """Cache older than 300 seconds should NOT be used as fallback."""
+        cached_data = {"trainNum": "42", "stations": []}
+        tracker._train_caches["42"] = {
+            "data": cached_data,
+            "fetch_time": FIXED_NOW - timedelta(seconds=301),
+            "error": None,
+        }
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.get.side_effect = httpx_http_error()
+        mock_client_cls.return_value = mock_client
+
+        result = tracker.fetch_train_data("42")
+        # Should NOT return cached data since it's stale
+        assert result != cached_data
+        assert result is not None and "error" in result
+
+
+class TestFetchTrainDataCachedErrorPath:
+    @patch("amtrak_status.tracker.fetch_train_data")
+    def test_cached_returns_cache_on_error_result(self, mock_fetch):
+        """When fetch returns an error dict but cache is fresh, use cache."""
+        cached = {"trainNum": "42", "stations": [], "routeName": "Pennsylvanian"}
+        tracker._train_caches["42"] = {
+            "data": cached,
+            "fetch_time": FIXED_NOW,
+            "error": None,
+        }
+        mock_fetch.return_value = {"error": "HTTP 500"}
+
+        result = tracker.fetch_train_data_cached("42")
+        assert result == cached  # should use cache, not error
+
+
+# =============================================================================
+# CLI / main() coverage
+# =============================================================================
+
+
+class TestMultiTrainArgParsing:
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.Console")
+    def test_multi_train_connection_arg(
+        self, mock_console_cls, mock_fetch_cached, mock_fetch, mock_live
+    ):
+        """--connection sets CONNECTION_STATION."""
+        train1 = make_train(
+            train_num="42",
+            stations=[make_station(code="PHL", status="Enroute", sch_arr=100, arr=200)],
+        )
+        train2 = make_train(
+            train_num="178",
+            stations=[make_station(code="PHL", status="", sch_dep=300)],
+        )
+        mock_fetch.side_effect = [train1, train2]
+        mock_fetch_cached.side_effect = [train1, train2]
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--connection", "PHL", "--once"]):
+            tracker.main()
+
+        assert tracker.CONNECTION_STATION == "PHL"
+
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.Console")
+    def test_two_train_numbers_triggers_multi_mode(
+        self, mock_console_cls, mock_fetch, mock_live
+    ):
+        """Providing two train numbers should use multi-train display."""
+        mock_fetch.return_value = None
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        with (
+            patch("sys.argv", ["amtrak-status", "42", "178", "--connection", "PHL", "--once"]),
+            patch("amtrak_status.tracker.fetch_train_data_cached", return_value=None),
+        ):
+            tracker.main()
+
+        assert tracker.CONNECTION_STATION == "PHL"
+
+
+class TestSelectConnectionStation:
+    def test_numeric_selection(self):
+        from rich.console import Console
+        console = Console(file=open("/dev/null", "w"))
+        with patch("amtrak_status.tracker.Prompt.ask", return_value="2"):
+            result = tracker.select_connection_station(
+                console, ["PHL", "NYP", "WAS"],
+                make_train(stations=[
+                    make_station(code="PHL", name="Philadelphia"),
+                    make_station(code="NYP", name="New York Penn"),
+                    make_station(code="WAS", name="Washington"),
+                ]),
+                make_train(stations=[]),
+            )
+        assert result == "NYP"
+
+    def test_code_selection(self):
+        from rich.console import Console
+        console = Console(file=open("/dev/null", "w"))
+        with patch("amtrak_status.tracker.Prompt.ask", return_value="WAS"):
+            result = tracker.select_connection_station(
+                console, ["PHL", "NYP", "WAS"],
+                make_train(stations=[
+                    make_station(code="PHL", name="Philadelphia"),
+                    make_station(code="NYP", name="New York Penn"),
+                    make_station(code="WAS", name="Washington"),
+                ]),
+                make_train(stations=[]),
+            )
+        assert result == "WAS"
+
+
+# =============================================================================
+# Edge cases
+# =============================================================================
+
+
+class TestFilterStationsEmptyString:
+    def test_empty_string_from(self):
+        """Empty string should behave like None (no filter)."""
+        stations = [
+            make_station(code="A"),
+            make_station(code="B"),
+            make_station(code="C"),
+        ]
+        result, before, after = tracker.filter_stations(stations, "", None)
+        # Empty string is falsy, so it should behave like None (no filter)
+        assert len(result) == 3
+        assert before == 0
+        assert after == 0

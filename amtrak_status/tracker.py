@@ -35,6 +35,11 @@ from rich.text import Text
 from rich.prompt import Prompt
 
 
+def _now():
+    """Current local time. Extracted for test patching."""
+    return datetime.now()
+
+
 API_BASE = "https://api-v3.amtraker.com/v3"
 REFRESH_INTERVAL = 30  # seconds
 MAX_RETRIES = 3
@@ -157,7 +162,7 @@ def calculate_position_between_stations(train: dict) -> tuple[str, str, float, i
         from datetime import timezone
         now = datetime.now(timezone.utc).astimezone(dep_time.tzinfo)
     else:
-        now = datetime.now()
+        now = _now()
     
     # Calculate total segment duration and elapsed time
     total_duration = (arr_time - dep_time).total_seconds()
@@ -337,14 +342,14 @@ def fetch_train_data(train_number: str) -> dict[str, Any] | None:
                 if result:
                     # Update single-train cache (for backward compatibility)
                     _last_successful_data = result
-                    _last_fetch_time = datetime.now()
+                    _last_fetch_time = _now()
                     _last_error = None
                     
                     # Also update per-train cache
                     if train_number not in _train_caches:
                         _train_caches[train_number] = {}
                     _train_caches[train_number]["data"] = result
-                    _train_caches[train_number]["fetch_time"] = datetime.now()
+                    _train_caches[train_number]["fetch_time"] = _now()
                     _train_caches[train_number]["error"] = None
                     
                     return result
@@ -354,7 +359,7 @@ def fetch_train_data(train_number: str) -> dict[str, Any] | None:
                 if train_number in _train_caches:
                     cache = _train_caches[train_number]
                     if cache.get("data") and cache.get("fetch_time"):
-                        age = (datetime.now() - cache["fetch_time"]).total_seconds()
+                        age = (_now() - cache["fetch_time"]).total_seconds()
                         if age < 300:  # Use cache for up to 5 minutes
                             _last_error = "Train not in API response (using cached data)"
                             return cache["data"]
@@ -371,7 +376,7 @@ def fetch_train_data(train_number: str) -> dict[str, Any] | None:
             if train_number in _train_caches:
                 cache = _train_caches[train_number]
                 if cache.get("data") and cache.get("fetch_time"):
-                    age = (datetime.now() - cache["fetch_time"]).total_seconds()
+                    age = (_now() - cache["fetch_time"]).total_seconds()
                     if age < 300:
                         _last_error = f"{error_msg} (using cached data)"
                         return cache["data"]
@@ -388,7 +393,7 @@ def fetch_train_data(train_number: str) -> dict[str, Any] | None:
             if train_number in _train_caches:
                 cache = _train_caches[train_number]
                 if cache.get("data") and cache.get("fetch_time"):
-                    age = (datetime.now() - cache["fetch_time"]).total_seconds()
+                    age = (_now() - cache["fetch_time"]).total_seconds()
                     if age < 300:
                         _last_error = f"{str(e)} (using cached data)"
                         return cache["data"]
@@ -1115,11 +1120,11 @@ def fetch_train_data_cached(train_number: str) -> dict[str, Any] | None:
     
     if result and "error" not in result:
         cache["data"] = result
-        cache["fetch_time"] = datetime.now()
+        cache["fetch_time"] = _now()
         cache["error"] = None
     elif cache["data"] and cache["fetch_time"]:
         # Use cached data if fetch failed
-        age = (datetime.now() - cache["fetch_time"]).total_seconds()
+        age = (_now() - cache["fetch_time"]).total_seconds()
         if age < 300:  # 5 minute cache
             cache["error"] = "Using cached data"
             return cache["data"]
@@ -1802,13 +1807,13 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                         if sched1:
                             _train_caches[train_numbers[0]] = {
                                 "data": build_predeparture_train_data(train_numbers[0], CONNECTION_STATION, sched1),
-                                "fetch_time": datetime.now(),
+                                "fetch_time": _now(),
                                 "error": None
                             }
                         if sched2:
                             _train_caches[train_numbers[1]] = {
                                 "data": build_predeparture_train_data(train_numbers[1], CONNECTION_STATION, sched2),
-                                "fetch_time": datetime.now(),
+                                "fetch_time": _now(),
                                 "error": None
                             }
                     else:
@@ -1825,7 +1830,7 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                         console.print(f"[green]✓ Found schedule for train {missing_train} at {CONNECTION_STATION}[/]")
                         _train_caches[missing_train] = {
                             "data": build_predeparture_train_data(missing_train, CONNECTION_STATION, sched),
-                            "fetch_time": datetime.now(),
+                            "fetch_time": _now(),
                             "error": None
                         }
                     else:
@@ -1903,7 +1908,7 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                         console.print(f"[green]✓ Found schedule for train {missing_train}[/]")
                         _train_caches[missing_train] = {
                             "data": build_predeparture_train_data(missing_train, CONNECTION_STATION, sched),
-                            "fetch_time": datetime.now(),
+                            "fetch_time": _now(),
                             "error": None
                         }
                     else:
@@ -1934,7 +1939,7 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                             console.print(f"[green]✓ Found schedule for train {train_num}[/]")
                             _train_caches[train_num] = {
                                 "data": build_predeparture_train_data(train_num, CONNECTION_STATION, sched),
-                                "fetch_time": datetime.now(),
+                                "fetch_time": _now(),
                                 "error": None
                             }
                         else:

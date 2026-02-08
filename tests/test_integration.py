@@ -4,219 +4,15 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock, call
 
 import pytest
-from rich.console import Console
+from rich.text import Text
 
 import amtrak_status.tracker as tracker
 
-# Reuse helpers from unit tests
-from test_amtrak_status import make_station, make_train, ts_ms, reset_globals
-
-
-# =============================================================================
-# Render helper
-# =============================================================================
-
-
-def render_to_text(renderable, width=120) -> str:
-    """Capture a Rich renderable as plain text for assertion."""
-    console = Console(record=True, width=width, force_terminal=False)
-    console.print(renderable)
-    return console.export_text()
-
-
-# =============================================================================
-# Realistic test data: a full Pennsylvanian #42 journey
-# =============================================================================
-
-
-def journey_at_phase(phase: str):
-    """
-    Build a realistic train #42 (Pennsylvanian) at different journey phases.
-    5 stations: PGH → GBG → HBG → PHL → NYP.
-
-    Phases:
-        "predeparture" — all stations scheduled, none departed
-        "early"        — PGH departed, heading to GBG
-        "mid"          — PGH+GBG departed, en route to HBG
-        "mid_late"     — same as mid but HBG arrival delayed +25 min
-        "arriving"     — PGH+GBG+HBG departed, at station PHL
-        "final_leg"    — PGH..PHL departed, en route to NYP
-    """
-    now = datetime.now()
-    base = now - timedelta(hours=2)
-
-    sch_times = {
-        "PGH_dep": base,
-        "GBG_arr": base + timedelta(hours=1),
-        "GBG_dep": base + timedelta(hours=1, minutes=2),
-        "HBG_arr": base + timedelta(hours=2, minutes=30),
-        "HBG_dep": base + timedelta(hours=2, minutes=35),
-        "PHL_arr": base + timedelta(hours=4),
-        "PHL_dep": base + timedelta(hours=4, minutes=5),
-        "NYP_arr": base + timedelta(hours=5, minutes=30),
-    }
-
-    if phase == "predeparture":
-        return make_train(
-            train_num="42", route_name="Pennsylvanian", train_id="42-1",
-            train_state="Predeparture", status_msg="", velocity=0,
-            dest_name="New York Penn",
-            stations=[
-                make_station(code="PGH", name="Pittsburgh", status="",
-                             sch_dep=ts_ms(sch_times["PGH_dep"])),
-                make_station(code="GBG", name="Greensburg", status="",
-                             sch_arr=ts_ms(sch_times["GBG_arr"]),
-                             sch_dep=ts_ms(sch_times["GBG_dep"])),
-                make_station(code="HBG", name="Harrisburg", status="",
-                             sch_arr=ts_ms(sch_times["HBG_arr"]),
-                             sch_dep=ts_ms(sch_times["HBG_dep"])),
-                make_station(code="PHL", name="Philadelphia", status="",
-                             sch_arr=ts_ms(sch_times["PHL_arr"]),
-                             sch_dep=ts_ms(sch_times["PHL_dep"])),
-                make_station(code="NYP", name="New York Penn", status="",
-                             sch_arr=ts_ms(sch_times["NYP_arr"])),
-            ],
-        )
-
-    elif phase == "early":
-        return make_train(
-            train_num="42", route_name="Pennsylvanian", train_id="42-1",
-            train_state="Active", status_msg="On Time", velocity=55,
-            heading="E", dest_name="New York Penn",
-            stations=[
-                make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(sch_times["PGH_dep"]),
-                             dep=ts_ms(sch_times["PGH_dep"] + timedelta(minutes=1))),
-                make_station(code="GBG", name="Greensburg", status="Enroute",
-                             sch_arr=ts_ms(sch_times["GBG_arr"]),
-                             sch_dep=ts_ms(sch_times["GBG_dep"]),
-                             arr=ts_ms(sch_times["GBG_arr"] + timedelta(minutes=2))),
-                make_station(code="HBG", name="Harrisburg", status="",
-                             sch_arr=ts_ms(sch_times["HBG_arr"]),
-                             sch_dep=ts_ms(sch_times["HBG_dep"])),
-                make_station(code="PHL", name="Philadelphia", status="",
-                             sch_arr=ts_ms(sch_times["PHL_arr"]),
-                             sch_dep=ts_ms(sch_times["PHL_dep"])),
-                make_station(code="NYP", name="New York Penn", status="",
-                             sch_arr=ts_ms(sch_times["NYP_arr"])),
-            ],
-        )
-
-    elif phase == "mid":
-        return make_train(
-            train_num="42", route_name="Pennsylvanian", train_id="42-1",
-            train_state="Active", status_msg="On Time", velocity=62,
-            heading="E", dest_name="New York Penn",
-            stations=[
-                make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(sch_times["PGH_dep"]),
-                             dep=ts_ms(sch_times["PGH_dep"] + timedelta(minutes=1))),
-                make_station(code="GBG", name="Greensburg", status="Departed",
-                             sch_arr=ts_ms(sch_times["GBG_arr"]),
-                             sch_dep=ts_ms(sch_times["GBG_dep"]),
-                             arr=ts_ms(sch_times["GBG_arr"] + timedelta(minutes=2)),
-                             dep=ts_ms(sch_times["GBG_dep"] + timedelta(minutes=3))),
-                make_station(code="HBG", name="Harrisburg", status="Enroute",
-                             sch_arr=ts_ms(sch_times["HBG_arr"]),
-                             sch_dep=ts_ms(sch_times["HBG_dep"]),
-                             arr=ts_ms(sch_times["HBG_arr"] + timedelta(minutes=5))),
-                make_station(code="PHL", name="Philadelphia", status="",
-                             sch_arr=ts_ms(sch_times["PHL_arr"]),
-                             sch_dep=ts_ms(sch_times["PHL_dep"])),
-                make_station(code="NYP", name="New York Penn", status="",
-                             sch_arr=ts_ms(sch_times["NYP_arr"])),
-            ],
-        )
-
-    elif phase == "mid_late":
-        # Same as mid but HBG arrival delayed +25 min
-        return make_train(
-            train_num="42", route_name="Pennsylvanian", train_id="42-1",
-            train_state="Active", status_msg="25 Minutes Late", velocity=45,
-            heading="E", dest_name="New York Penn",
-            stations=[
-                make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(sch_times["PGH_dep"]),
-                             dep=ts_ms(sch_times["PGH_dep"] + timedelta(minutes=1))),
-                make_station(code="GBG", name="Greensburg", status="Departed",
-                             sch_arr=ts_ms(sch_times["GBG_arr"]),
-                             sch_dep=ts_ms(sch_times["GBG_dep"]),
-                             arr=ts_ms(sch_times["GBG_arr"] + timedelta(minutes=15)),
-                             dep=ts_ms(sch_times["GBG_dep"] + timedelta(minutes=18))),
-                make_station(code="HBG", name="Harrisburg", status="Enroute",
-                             sch_arr=ts_ms(sch_times["HBG_arr"]),
-                             sch_dep=ts_ms(sch_times["HBG_dep"]),
-                             arr=ts_ms(sch_times["HBG_arr"] + timedelta(minutes=25))),
-                make_station(code="PHL", name="Philadelphia", status="",
-                             sch_arr=ts_ms(sch_times["PHL_arr"]),
-                             sch_dep=ts_ms(sch_times["PHL_dep"]),
-                             arr=ts_ms(sch_times["PHL_arr"] + timedelta(minutes=22))),
-                make_station(code="NYP", name="New York Penn", status="",
-                             sch_arr=ts_ms(sch_times["NYP_arr"]),
-                             arr=ts_ms(sch_times["NYP_arr"] + timedelta(minutes=20))),
-            ],
-        )
-
-    elif phase == "arriving":
-        return make_train(
-            train_num="42", route_name="Pennsylvanian", train_id="42-1",
-            train_state="Active", status_msg="On Time", velocity=0,
-            heading="E", dest_name="New York Penn",
-            stations=[
-                make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(sch_times["PGH_dep"]),
-                             dep=ts_ms(sch_times["PGH_dep"] + timedelta(minutes=1))),
-                make_station(code="GBG", name="Greensburg", status="Departed",
-                             sch_arr=ts_ms(sch_times["GBG_arr"]),
-                             sch_dep=ts_ms(sch_times["GBG_dep"]),
-                             arr=ts_ms(sch_times["GBG_arr"]),
-                             dep=ts_ms(sch_times["GBG_dep"])),
-                make_station(code="HBG", name="Harrisburg", status="Departed",
-                             sch_arr=ts_ms(sch_times["HBG_arr"]),
-                             sch_dep=ts_ms(sch_times["HBG_dep"]),
-                             arr=ts_ms(sch_times["HBG_arr"]),
-                             dep=ts_ms(sch_times["HBG_dep"])),
-                make_station(code="PHL", name="Philadelphia", status="Station",
-                             sch_arr=ts_ms(sch_times["PHL_arr"]),
-                             sch_dep=ts_ms(sch_times["PHL_dep"]),
-                             arr=ts_ms(sch_times["PHL_arr"] - timedelta(minutes=2))),
-                make_station(code="NYP", name="New York Penn", status="",
-                             sch_arr=ts_ms(sch_times["NYP_arr"]),
-                             arr=ts_ms(sch_times["NYP_arr"])),
-            ],
-        )
-
-    elif phase == "final_leg":
-        return make_train(
-            train_num="42", route_name="Pennsylvanian", train_id="42-1",
-            train_state="Active", status_msg="On Time", velocity=70,
-            heading="NE", dest_name="New York Penn",
-            stations=[
-                make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(sch_times["PGH_dep"]),
-                             dep=ts_ms(sch_times["PGH_dep"])),
-                make_station(code="GBG", name="Greensburg", status="Departed",
-                             sch_arr=ts_ms(sch_times["GBG_arr"]),
-                             sch_dep=ts_ms(sch_times["GBG_dep"]),
-                             arr=ts_ms(sch_times["GBG_arr"]),
-                             dep=ts_ms(sch_times["GBG_dep"])),
-                make_station(code="HBG", name="Harrisburg", status="Departed",
-                             sch_arr=ts_ms(sch_times["HBG_arr"]),
-                             sch_dep=ts_ms(sch_times["HBG_dep"]),
-                             arr=ts_ms(sch_times["HBG_arr"]),
-                             dep=ts_ms(sch_times["HBG_dep"])),
-                make_station(code="PHL", name="Philadelphia", status="Departed",
-                             sch_arr=ts_ms(sch_times["PHL_arr"]),
-                             sch_dep=ts_ms(sch_times["PHL_dep"]),
-                             arr=ts_ms(sch_times["PHL_arr"]),
-                             dep=ts_ms(sch_times["PHL_dep"])),
-                make_station(code="NYP", name="New York Penn", status="Enroute",
-                             sch_arr=ts_ms(sch_times["NYP_arr"]),
-                             arr=ts_ms(sch_times["NYP_arr"])),
-            ],
-        )
-
-    raise ValueError(f"Unknown phase: {phase}")
+# Shared helpers from conftest (imported explicitly for use in test code)
+from conftest import (
+    make_station, make_train, ts_ms, FIXED_NOW,
+    render_to_text, journey_at_phase,
+)
 
 
 # =============================================================================
@@ -496,7 +292,7 @@ class TestRenderedCompactOutput:
 class TestRenderedConnectionPanel:
     def _make_connection_trains(self, layover_minutes):
         """Build two trains connecting at PHL with specified layover."""
-        now = datetime.now()
+        now = FIXED_NOW
         train1 = make_train(
             train_num="42", route_name="Pennsylvanian",
             stations=[
@@ -560,7 +356,7 @@ class TestRenderedConnectionPanel:
         assert "risky" in text
 
     def test_missed_connection_text(self):
-        now = datetime.now()
+        now = FIXED_NOW
         # Train1 arrives AFTER train2 departs
         train1 = make_train(
             train_num="42", route_name="Pennsylvanian",
@@ -682,7 +478,7 @@ class TestJourneyLifecycle:
 class TestMultiTrainLifecycle:
     def _make_two_trains(self, train1_delay_mins=0):
         """Build train1 (PGH→PHL→NYP) and train2 (PHL→HBG) connecting at PHL."""
-        now = datetime.now()
+        now = FIXED_NOW
         train1 = make_train(
             train_num="42", route_name="Pennsylvanian",
             stations=[
@@ -800,7 +596,7 @@ class TestErrorAndRecovery:
         """When API fails but cache is fresh, data still renders and warning appears."""
         train = journey_at_phase("mid")
         tracker._last_successful_data = train
-        tracker._last_fetch_time = datetime.now()
+        tracker._last_fetch_time = FIXED_NOW
         tracker._last_error = "Train not in API response (using cached data)"
 
         panel = tracker.build_header(train)
@@ -897,7 +693,7 @@ class TestNotificationIntegration:
         self, mock_console_cls, mock_sleep, mock_check_notify
     ):
         """check_and_notify should be called in multi-train --once mode."""
-        now = datetime.now()
+        now = FIXED_NOW
         tracker.NOTIFY_STATIONS = {"PHL"}
 
         train1 = make_train(
@@ -925,7 +721,7 @@ class TestNotificationIntegration:
             data = {"42": train1, "178": train2}.get(num)
             if data:
                 tracker._train_caches[num] = {
-                    "data": data, "fetch_time": datetime.now(), "error": None
+                    "data": data, "fetch_time": FIXED_NOW, "error": None
                 }
             return data
 
@@ -979,7 +775,7 @@ class TestFullBuildDisplay:
         mock_fetch.return_value = journey_at_phase("mid")
         result = tracker.build_display("42")
 
-        assert isinstance(result, type(result))  # it's a Text
+        assert isinstance(result, Text)  # it's a Text
         text = result.plain
         assert "Pennsylvanian" in text
         assert "#42" in text
@@ -998,3 +794,334 @@ class TestFullBuildDisplay:
         assert "Harrisburg" in text
         assert "New York Penn" in text
         assert "earlier stops omitted" in text
+
+
+# =============================================================================
+# Multi-train display coverage
+# =============================================================================
+
+
+class TestRenderedCompactTrainHeader:
+    def test_active_train_shows_info(self):
+        train = journey_at_phase("mid")
+        panel = tracker.build_compact_train_header(train)
+        text = render_to_text(panel)
+
+        assert "Pennsylvanian" in text
+        assert "#42" in text
+        assert "On Time" in text
+        assert "Harrisburg" in text  # next station
+        assert "62 mph" in text or "62mph" in text
+
+    def test_position_bar_present(self):
+        train = journey_at_phase("mid")
+        panel = tracker.build_compact_train_header(train)
+        text = render_to_text(panel)
+
+        assert "GBG" in text  # last departed
+        assert "HBG" in text  # next station
+
+    def test_zero_velocity_shows_dash(self):
+        train = journey_at_phase("arriving")  # velocity=0
+        panel = tracker.build_compact_train_header(train)
+        text = render_to_text(panel)
+
+        assert "0 mph" not in text
+
+    def test_predeparture_synthetic_shows_schedule(self):
+        """Synthetic predeparture data should show scheduled time."""
+        now = FIXED_NOW
+        train = make_train(
+            train_state="Predeparture",
+            stations=[make_station(code="PHL", sch_dep=ts_ms(now))],
+        )
+        train["_predeparture"] = True
+        panel = tracker.build_compact_train_header(train)
+        text = render_to_text(panel)
+
+        assert "Predeparture" in text
+        assert "PHL" in text
+        assert "Live tracking begins" in text
+
+    def test_late_train_shows_delay(self):
+        train = journey_at_phase("mid_late")
+        panel = tracker.build_compact_train_header(train)
+        text = render_to_text(panel)
+
+        assert "25 Minutes Late" in text
+
+
+class TestRenderedPredepartureDisplay:
+    def test_predeparture_panel_content(self):
+        panel = tracker.build_predeparture_panel("42")
+        text = render_to_text(panel)
+
+        assert "#42" in text
+        assert "Awaiting Departure" in text
+        assert "Predeparture" in text
+
+    def test_predeparture_header_content(self):
+        panel = tracker.build_predeparture_header("42")
+        text = render_to_text(panel)
+
+        assert "#42" in text
+        assert "Awaiting Departure" in text
+        assert "Live tracking" in text
+
+
+class TestMultiTrainTitlePresence:
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    def test_title_present_when_only_train1_valid(self, mock_fetch):
+        now = FIXED_NOW
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[
+                make_station(code="PGH", status="Departed",
+                             sch_dep=ts_ms(now - timedelta(hours=3)),
+                             dep=ts_ms(now - timedelta(hours=3))),
+                make_station(code="PHL", status="Enroute",
+                             sch_arr=ts_ms(now + timedelta(hours=1)),
+                             arr=ts_ms(now + timedelta(hours=1))),
+            ],
+        )
+        mock_fetch.side_effect = [train1, None]
+
+        layout = tracker.build_multi_train_display(["42", "178"], "PHL")
+        text = render_to_text(layout)
+
+        assert "Amtrak Status" in text
+        assert "Refresh:" in text
+        assert "Ctrl+C" in text
+
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    def test_title_present_when_only_train2_valid(self, mock_fetch):
+        now = FIXED_NOW
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[
+                make_station(code="PHL", status="",
+                             sch_dep=ts_ms(now + timedelta(hours=2))),
+                make_station(code="HBG", status="",
+                             sch_arr=ts_ms(now + timedelta(hours=4))),
+            ],
+        )
+        mock_fetch.side_effect = [None, train2]
+
+        layout = tracker.build_multi_train_display(["42", "178"], "PHL")
+        text = render_to_text(layout)
+
+        assert "Amtrak Status" in text
+        assert "Refresh:" in text
+        assert "Ctrl+C" in text
+
+
+# =============================================================================
+# Connection, notification, and cache coverage
+# =============================================================================
+
+
+class TestConnectionPanelStatusTransitions:
+    def test_train1_arrived_shows_checkmark(self):
+        """When train1 has departed the connection station, show 'Arrived'."""
+        now = FIXED_NOW
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="Departed",
+                sch_arr=ts_ms(now - timedelta(minutes=30)),
+                arr=ts_ms(now - timedelta(minutes=30)),
+                dep=ts_ms(now - timedelta(minutes=25)),
+            )],
+        )
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="",
+                sch_dep=ts_ms(now + timedelta(minutes=60)),
+            )],
+        )
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Arrived" in text
+
+    def test_train1_at_station_shows_bullet(self):
+        now = FIXED_NOW
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="Station",
+                sch_arr=ts_ms(now - timedelta(minutes=5)),
+                arr=ts_ms(now - timedelta(minutes=3)),
+            )],
+        )
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="",
+                sch_dep=ts_ms(now + timedelta(minutes=60)),
+            )],
+        )
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "At station" in text
+
+    def test_train2_boarding_shows_bullet(self):
+        now = FIXED_NOW
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="Departed",
+                sch_arr=ts_ms(now - timedelta(hours=1)),
+                arr=ts_ms(now - timedelta(hours=1)),
+            )],
+        )
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="Station",
+                sch_dep=ts_ms(now + timedelta(minutes=5)),
+            )],
+        )
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Boarding" in text
+
+    def test_train2_already_departed_shows_departed(self):
+        now = FIXED_NOW
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="Enroute",
+                sch_arr=ts_ms(now + timedelta(minutes=30)),
+                arr=ts_ms(now + timedelta(minutes=30)),
+            )],
+        )
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[make_station(
+                code="PHL", name="Philadelphia", status="Departed",
+                sch_dep=ts_ms(now - timedelta(minutes=10)),
+                dep=ts_ms(now - timedelta(minutes=10)),
+            )],
+        )
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Departed" in text
+
+
+class TestLayoverBoundary:
+    def _make_connection_trains(self, layover_minutes):
+        now = FIXED_NOW
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[
+                make_station(code="PGH", name="Pittsburgh", status="Departed",
+                             sch_dep=ts_ms(now - timedelta(hours=3))),
+                make_station(code="PHL", name="Philadelphia", status="Enroute",
+                             sch_arr=ts_ms(now + timedelta(minutes=30)),
+                             arr=ts_ms(now + timedelta(minutes=30))),
+            ],
+        )
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[
+                make_station(code="PHL", name="Philadelphia", status="",
+                             sch_dep=ts_ms(now + timedelta(minutes=30 + layover_minutes))),
+                make_station(code="HBG", name="Harrisburg", status="",
+                             sch_arr=ts_ms(now + timedelta(hours=3))),
+            ],
+        )
+        return train1, train2
+
+    def test_exactly_60_min_layover(self):
+        train1, train2 = self._make_connection_trains(60)
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "1h 0m layover" in text
+
+
+class TestNotificationObservable:
+    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    def test_departed_before_init_not_notified(self, mock_notify):
+        """Only check observable behavior: no notifications sent for pre-departed stations."""
+        tracker.NOTIFY_ALL = True
+
+        # Init at mid journey — PGH and GBG already departed
+        train_mid = journey_at_phase("mid")
+        tracker.check_and_notify(train_mid)
+
+        # No notification should have been sent for pre-departed stations
+        for c in mock_notify.call_args_list:
+            message = c[0][1]
+            assert "Pittsburgh" not in message
+            assert "Greensburg" not in message
+
+
+# =============================================================================
+# Edge cases
+# =============================================================================
+
+
+class TestCompletedJourney:
+    def test_completed_journey_all_checkmarks(self):
+        """A completed journey should show all stations as departed."""
+        now = FIXED_NOW
+        base = now - timedelta(hours=6)
+        train = make_train(
+            train_num="42", route_name="Pennsylvanian", train_id="42-1",
+            train_state="Active", status_msg="On Time", velocity=0,
+            heading="", dest_name="New York Penn",
+            stations=[
+                make_station(code="PGH", name="Pittsburgh", status="Departed",
+                             sch_dep=ts_ms(base),
+                             dep=ts_ms(base)),
+                make_station(code="GBG", name="Greensburg", status="Departed",
+                             sch_arr=ts_ms(base + timedelta(hours=1)),
+                             sch_dep=ts_ms(base + timedelta(hours=1, minutes=2)),
+                             arr=ts_ms(base + timedelta(hours=1)),
+                             dep=ts_ms(base + timedelta(hours=1, minutes=2))),
+                make_station(code="HBG", name="Harrisburg", status="Departed",
+                             sch_arr=ts_ms(base + timedelta(hours=3)),
+                             sch_dep=ts_ms(base + timedelta(hours=3, minutes=5)),
+                             arr=ts_ms(base + timedelta(hours=3)),
+                             dep=ts_ms(base + timedelta(hours=3, minutes=5))),
+                make_station(code="NYP", name="New York Penn", status="Station",
+                             sch_arr=ts_ms(base + timedelta(hours=5, minutes=30)),
+                             arr=ts_ms(base + timedelta(hours=5, minutes=30))),
+            ],
+        )
+        panel = tracker.build_stations_table(train)
+        text = render_to_text(panel)
+
+        # All stations should appear
+        assert "Pittsburgh" in text
+        assert "Greensburg" in text
+        assert "Harrisburg" in text
+        assert "New York Penn" in text
+
+        # Final station should show bullet (Station status)
+        lines = text.split("\n")
+        nyp_lines = [l for l in lines if "New York Penn" in l]
+        assert any("●" in l for l in nyp_lines)
+
+
+class TestPlatformDisplay:
+    def test_platform_shown_for_enroute_station(self):
+        train = make_train(stations=[
+            make_station(code="PGH", name="Pittsburgh", status="Departed",
+                         sch_dep=100, dep=101),
+            make_station(code="HBG", name="Harrisburg", status="Enroute",
+                         sch_arr=200, sch_dep=300, arr=250, platform="3"),
+        ])
+        panel = tracker.build_stations_table(train)
+        text = render_to_text(panel)
+        assert "Plt 3" in text
+
+
+class TestZeroVelocityHeader:
+    def test_zero_velocity_shows_dash(self):
+        train = journey_at_phase("arriving")  # velocity=0
+        panel = tracker.build_header(train)
+        text = render_to_text(panel)
+
+        assert "0 mph" not in text
