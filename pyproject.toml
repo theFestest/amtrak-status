@@ -28,6 +28,11 @@ dev = [
     "pytest"
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "coincidence: test that passes due to coincidental behavior, not correct logic",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

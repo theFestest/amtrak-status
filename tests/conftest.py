@@ -1,7 +1,9 @@
 """Shared test fixtures and helpers for amtrak-status tests."""
 
+import json
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 from rich.console import Console
@@ -147,6 +149,25 @@ def render_to_text(renderable, width=120) -> str:
     console = Console(record=True, width=width, force_terminal=False)
     console.print(renderable)
     return console.export_text()
+
+
+def load_fixture(name: str):
+    """Load a JSON fixture file from tests/fixtures/."""
+    fixture_path = Path(__file__).parent / "fixtures" / name
+    with open(fixture_path) as f:
+        return json.load(f)
+
+
+def make_mock_httpx_client(json_response):
+    """Create a mock httpx.Client that returns the given JSON from .get()."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = json_response
+    mock_response.raise_for_status.return_value = None
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.get.return_value = mock_response
+    return mock_client
 
 
 def journey_at_phase(phase: str, now=None):
