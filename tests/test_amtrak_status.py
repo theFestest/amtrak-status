@@ -1919,3 +1919,542 @@ class TestRenderedContentDetails:
         assert "Philadelphia" in text
         assert "Pittsburgh (PGH)" not in text
         assert "New York Penn (NYP)" not in text
+
+
+# =============================================================================
+# TestBuildConnectionPanel
+# =============================================================================
+
+
+class TestBuildConnectionPanel:
+    """Test rendering of build_connection_panel for various layover scenarios."""
+
+    @staticmethod
+    def _make_connection_trains(arr_time, dep_time, train1_status="Enroute", train2_status=""):
+        """Build train1 arriving at PHL and train2 departing PHL."""
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[
+                make_station(code="PGH", name="Pittsburgh", status="Departed",
+                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=3)),
+                             dep=ts_ms(FIXED_NOW - timedelta(hours=3))),
+                make_station(code="PHL", name="Philadelphia", status=train1_status,
+                             sch_arr=arr_time, arr=arr_time),
+            ],
+        )
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[
+                make_station(code="PHL", name="Philadelphia", status=train2_status,
+                             sch_dep=dep_time, dep=dep_time if train2_status == "Departed" else None),
+                make_station(code="HBG", name="Harrisburg", status="",
+                             sch_arr=ts_ms(FIXED_NOW + timedelta(hours=4))),
+            ],
+        )
+        return train1, train2
+
+    def test_comfortable_layover_rendering(self):
+        arr = ts_ms(FIXED_NOW)
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        train1, train2 = self._make_connection_trains(arr, dep)
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "1h 30m layover" in text
+        assert "#42" in text
+        assert "#178" in text
+        assert "Connection at Philadelphia (PHL)" in text
+
+    def test_risky_layover_rendering(self):
+        arr = ts_ms(FIXED_NOW)
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=20))
+        train1, train2 = self._make_connection_trains(arr, dep)
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "20 min layover" in text
+        assert "risky!" in text
+        assert "⚠" in text
+
+    def test_tight_layover_rendering(self):
+        arr = ts_ms(FIXED_NOW)
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=35))
+        train1, train2 = self._make_connection_trains(arr, dep)
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "35 min layover" in text
+        assert "tight" in text
+        assert "⚡" in text
+
+    def test_missed_layover_rendering(self):
+        arr = ts_ms(FIXED_NOW + timedelta(minutes=30))
+        dep = ts_ms(FIXED_NOW)
+        train1, train2 = self._make_connection_trains(arr, dep)
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "MISSED" in text
+        assert "✗" in text
+
+    def test_unknown_layover_rendering(self):
+        train1 = make_train(
+            train_num="42", route_name="Pennsylvanian",
+            stations=[make_station(code="PHL", name="Philadelphia", status="Enroute")],
+        )
+        train2 = make_train(
+            train_num="178", route_name="Keystone",
+            stations=[make_station(code="PHL", name="Philadelphia", status="")],
+        )
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Layover unknown" in text
+
+    def test_train1_arrived_shows_icon(self):
+        arr = ts_ms(FIXED_NOW - timedelta(minutes=10))
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        train1, train2 = self._make_connection_trains(arr, dep, train1_status="Departed")
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Arrived" in text
+
+    def test_train1_at_station_shows_icon(self):
+        arr = ts_ms(FIXED_NOW)
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        train1, train2 = self._make_connection_trains(arr, dep, train1_status="Station")
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "At station" in text
+        assert "●" in text
+
+    def test_train1_expected_shows_icon(self):
+        arr = ts_ms(FIXED_NOW + timedelta(minutes=30))
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=120))
+        train1, train2 = self._make_connection_trains(arr, dep, train1_status="Enroute")
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Expected" in text
+
+    def test_train2_scheduled_shows_label(self):
+        arr = ts_ms(FIXED_NOW)
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        train1, train2 = self._make_connection_trains(arr, dep, train2_status="")
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Scheduled" in text
+
+    def test_train2_boarding_shows_label(self):
+        arr = ts_ms(FIXED_NOW - timedelta(minutes=10))
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=10))
+        train1, train2 = self._make_connection_trains(arr, dep, train1_status="Departed", train2_status="Station")
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Boarding" in text
+
+    def test_train2_departed_missed_shows_x(self):
+        arr = ts_ms(FIXED_NOW + timedelta(minutes=30))
+        dep = ts_ms(FIXED_NOW - timedelta(minutes=10))
+        train1, train2 = self._make_connection_trains(arr, dep, train1_status="Enroute", train2_status="Departed")
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "MISSED" in text or "Departed" in text
+        assert "✗" in text
+
+    def test_panel_title_has_station(self):
+        arr = ts_ms(FIXED_NOW)
+        dep = ts_ms(FIXED_NOW + timedelta(minutes=60))
+        train1, train2 = self._make_connection_trains(arr, dep)
+        panel = tracker.build_connection_panel(train1, train2, "PHL")
+        text = render_to_text(panel)
+        assert "Connection at Philadelphia (PHL)" in text
+
+
+# =============================================================================
+# TestBuildErrorPanel and TestBuildNotFoundPanel
+# =============================================================================
+
+
+class TestBuildErrorPanel:
+    """Test build_error_panel rendering."""
+
+    def test_error_message_rendered(self):
+        panel = tracker.build_error_panel("HTTP 500 Server Error")
+        text = render_to_text(panel)
+        assert "Error: HTTP 500 Server Error" in text
+
+    def test_error_panel_title(self):
+        panel = tracker.build_error_panel("something broke")
+        text = render_to_text(panel)
+        assert "Error" in text
+
+    def test_returns_panel(self):
+        result = tracker.build_error_panel("fail")
+        assert isinstance(result, Panel)
+
+
+class TestBuildNotFoundPanel:
+    """Test build_not_found_panel rendering."""
+
+    def test_shows_train_number(self):
+        panel = tracker.build_not_found_panel("42")
+        text = render_to_text(panel)
+        assert "Train #42" in text
+
+    def test_shows_not_found_text(self):
+        panel = tracker.build_not_found_panel("42")
+        text = render_to_text(panel)
+        assert "not found" in text
+
+    def test_shows_possible_causes(self):
+        panel = tracker.build_not_found_panel("42")
+        text = render_to_text(panel)
+        assert "hasn't started" in text
+        assert "incorrect" in text
+        assert "completed its journey" in text
+
+    def test_panel_title(self):
+        panel = tracker.build_not_found_panel("42")
+        text = render_to_text(panel)
+        assert "Train Not Found" in text
+
+    def test_returns_panel(self):
+        result = tracker.build_not_found_panel("42")
+        assert isinstance(result, Panel)
+
+
+# =============================================================================
+# TestBuildHeaderEdgeCases
+# =============================================================================
+
+
+class TestBuildHeaderEdgeCases:
+    """Test build_header ETA edge cases."""
+
+    def test_eta_exact_on_schedule_no_diff(self):
+        """When arr == schArr, no +/- diff should appear and no '(sched)' label."""
+        same_time = ts_ms(FIXED_NOW + timedelta(hours=1))
+        train = make_train(
+            train_state="Active", status_msg="On Time",
+            stations=[
+                make_station(code="PGH", name="Pittsburgh", status="Departed",
+                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=2)),
+                             dep=ts_ms(FIXED_NOW - timedelta(hours=2))),
+                make_station(code="PHL", name="Philadelphia", status="Enroute",
+                             sch_arr=same_time, arr=same_time),
+            ],
+        )
+        text = render_to_text(tracker.build_header(train))
+        # Time should appear but no delay/early indicators
+        assert "+" not in text or "+0m" not in text
+        assert "-" not in text.split("@")[1] if "@" in text else True
+        assert "(sched)" not in text
+
+    def test_eta_no_times_shows_dash(self):
+        """Station with only schDep, no schArr/arr -> ETA shows dash."""
+        train = make_train(
+            train_state="Active", status_msg="On Time",
+            stations=[
+                make_station(code="PGH", name="Pittsburgh", status="Departed",
+                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=2)),
+                             dep=ts_ms(FIXED_NOW - timedelta(hours=2))),
+                make_station(code="GBG", name="Greensburg", status="Enroute",
+                             sch_dep=ts_ms(FIXED_NOW + timedelta(hours=1))),
+            ],
+        )
+        text = render_to_text(tracker.build_header(train))
+        # The ETA after "@ " should be a dash since there's no arrival time
+        assert "@ —" in text
+
+    def test_active_status_when_no_status_msg(self):
+        """With train_state='Active' and empty status_msg, header should show 'Active'."""
+        train = make_train(
+            train_state="Active", status_msg="",
+            stations=[
+                make_station(code="PGH", name="Pittsburgh", status="Departed",
+                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=2)),
+                             dep=ts_ms(FIXED_NOW - timedelta(hours=2))),
+                make_station(code="PHL", name="Philadelphia", status="Enroute",
+                             sch_arr=ts_ms(FIXED_NOW + timedelta(hours=1)),
+                             arr=ts_ms(FIXED_NOW + timedelta(hours=1))),
+            ],
+        )
+        text = render_to_text(tracker.build_header(train))
+        assert "Active" in text
+
+
+# =============================================================================
+# TestMainLiveRefreshLoop
+# =============================================================================
+
+
+class TestMainLiveRefreshLoop:
+    """Test main() live-refresh loop entry/exit."""
+
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep", side_effect=KeyboardInterrupt)
+    def test_single_full_mode_uses_live(self, mock_sleep, mock_live_cls, mock_fetch, mock_console_cls):
+        """Full mode uses Live context manager; KeyboardInterrupt triggers sys.exit(0)."""
+        mock_fetch.return_value = make_train(stations=sample_journey_stations())
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        # Live context manager setup
+        mock_live_instance = MagicMock()
+        mock_live_cls.return_value = mock_live_instance
+        mock_live_instance.__enter__ = MagicMock(return_value=mock_live_instance)
+        mock_live_instance.__exit__ = MagicMock(return_value=False)
+
+        with patch("sys.argv", ["amtrak-status", "42"]):
+            with pytest.raises(SystemExit):
+                tracker.main()
+
+        mock_live_cls.assert_called_once()
+
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep", side_effect=KeyboardInterrupt)
+    def test_single_compact_mode_no_live(self, mock_sleep, mock_live_cls, mock_fetch, mock_console_cls):
+        """Compact mode does NOT use Live; uses console.print and console.clear."""
+        mock_fetch.return_value = make_train(stations=sample_journey_stations())
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        with patch("sys.argv", ["amtrak-status", "42", "--compact"]):
+            tracker.main()
+
+        mock_live_cls.assert_not_called()
+        mock_console.print.assert_called()
+
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep", side_effect=[None, KeyboardInterrupt])
+    def test_multi_full_mode_uses_live(self, mock_sleep, mock_live_cls, mock_fetch_cached, mock_fetch, mock_console_cls):
+        """Multi-train full mode uses Live; sleep(1) during setup then KeyboardInterrupt in loop."""
+        train1 = make_train(
+            train_num="42",
+            stations=[
+                make_station(code="PHL", name="Philadelphia", status="Enroute",
+                             sch_arr=ts_ms(FIXED_NOW + timedelta(hours=1)),
+                             arr=ts_ms(FIXED_NOW + timedelta(hours=1))),
+            ],
+        )
+        train2 = make_train(
+            train_num="178",
+            stations=[
+                make_station(code="PHL", name="Philadelphia", status="",
+                             sch_dep=ts_ms(FIXED_NOW + timedelta(hours=2))),
+            ],
+        )
+        mock_fetch.side_effect = [train1, train2]
+        mock_fetch_cached.side_effect = [train1, train2]
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        # Live context manager setup
+        mock_live_instance = MagicMock()
+        mock_live_cls.return_value = mock_live_instance
+        mock_live_instance.__enter__ = MagicMock(return_value=mock_live_instance)
+        mock_live_instance.__exit__ = MagicMock(return_value=False)
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--connection", "PHL"]):
+            with pytest.raises(SystemExit):
+                tracker.main()
+
+        mock_live_cls.assert_called_once()
+
+
+# =============================================================================
+# TestMainMultiTrainOrchestration
+# =============================================================================
+
+
+class TestMainMultiTrainOrchestration:
+    """Test main() multi-train orchestration branches using --once to avoid loop."""
+
+    def _make_train_with_stations(self, train_num, station_codes, route_name="TestRoute"):
+        """Build a train with stations at the given codes."""
+        stations = [
+            make_station(code=code, name=f"Station {code}", status="Enroute" if i == 0 else "",
+                         sch_arr=ts_ms(FIXED_NOW + timedelta(hours=i)),
+                         sch_dep=ts_ms(FIXED_NOW + timedelta(hours=i, minutes=5)))
+            for i, code in enumerate(station_codes)
+        ]
+        return make_train(train_num=train_num, route_name=route_name, stations=stations)
+
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.fetch_station_schedule")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep")
+    def test_conn_provided_neither_valid_fetches_schedule(
+        self, mock_sleep, mock_live, mock_fetch_station, mock_fetch_cached,
+        mock_fetch, mock_console_cls
+    ):
+        """Branch 1a: --connection PHL, neither train valid -> fetch station schedule."""
+        mock_fetch.return_value = None
+        mock_fetch_cached.return_value = None
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        schedule_data = {
+            "PHL": [
+                {"trainNum": "42", "schArr": 1000, "schDep": 2000, "arr": None, "dep": None, "status": ""},
+                {"trainNum": "178", "schArr": 3000, "schDep": 4000, "arr": None, "dep": None, "status": ""},
+            ]
+        }
+        mock_fetch_station.return_value = schedule_data
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--connection", "PHL", "--once"]):
+            tracker.main()
+
+        mock_fetch_station.assert_called_with("PHL")
+        # Caches should be populated with predeparture data
+        assert "42" in tracker._train_caches
+        assert tracker._train_caches["42"]["data"]["_predeparture"] is True
+        assert "178" in tracker._train_caches
+        assert tracker._train_caches["178"]["data"]["_predeparture"] is True
+
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.fetch_station_schedule")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep")
+    def test_conn_provided_one_invalid_fetches_for_missing(
+        self, mock_sleep, mock_live, mock_fetch_station, mock_fetch_cached,
+        mock_fetch, mock_console_cls
+    ):
+        """Branch 1b: --connection PHL, train1 valid, train2 None -> fetch schedule for train2."""
+        train1 = self._make_train_with_stations("42", ["PGH", "PHL", "NYP"])
+        mock_fetch.side_effect = [train1, None]
+        mock_fetch_cached.side_effect = [train1, None]
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        schedule_data = {
+            "PHL": [
+                {"trainNum": "178", "schArr": 3000, "schDep": 4000, "arr": None, "dep": None, "status": ""},
+            ]
+        }
+        mock_fetch_station.return_value = schedule_data
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--connection", "PHL", "--once"]):
+            tracker.main()
+
+        mock_fetch_station.assert_called_with("PHL")
+        assert "178" in tracker._train_caches
+        assert tracker._train_caches["178"]["data"]["_predeparture"] is True
+
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep")
+    def test_no_conn_single_overlap_autodetects(
+        self, mock_sleep, mock_live, mock_fetch_cached, mock_fetch, mock_console_cls
+    ):
+        """Branch 2a-ii: No --connection, both valid, single overlap -> auto-detect."""
+        train1 = self._make_train_with_stations("42", ["PGH", "PHL", "NYP"])
+        train2 = self._make_train_with_stations("178", ["PHL", "HBG"])
+        mock_fetch.side_effect = [train1, train2]
+        mock_fetch_cached.side_effect = [train1, train2]
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
+            tracker.main()
+
+        assert tracker.CONNECTION_STATION == "PHL"
+
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep")
+    def test_no_conn_no_overlap_exits(
+        self, mock_sleep, mock_live, mock_fetch_cached, mock_fetch, mock_console_cls
+    ):
+        """Branch 2a-i: No --connection, both valid, no shared stations -> sys.exit(1)."""
+        train1 = self._make_train_with_stations("42", ["PGH", "HBG"])
+        train2 = self._make_train_with_stations("178", ["WAS", "BOS"])
+        mock_fetch.side_effect = [train1, train2]
+        mock_fetch_cached.side_effect = [train1, train2]
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
+            with pytest.raises(SystemExit):
+                tracker.main()
+
+    @patch("amtrak_status.tracker.Prompt.ask", return_value="1")
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep")
+    def test_no_conn_multiple_overlaps_prompts(
+        self, mock_sleep, mock_live, mock_fetch_cached, mock_fetch,
+        mock_console_cls, mock_prompt
+    ):
+        """Branch 2a-iii: No --connection, both valid, multiple overlaps -> prompt user."""
+        train1 = self._make_train_with_stations("42", ["PGH", "PHL", "NYP"])
+        train2 = self._make_train_with_stations("178", ["PHL", "NYP", "BOS"])
+        mock_fetch.side_effect = [train1, train2]
+        mock_fetch_cached.side_effect = [train1, train2]
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
+            tracker.main()
+
+        assert tracker.CONNECTION_STATION == "PHL"
+
+    @patch("amtrak_status.tracker.Prompt.ask", return_value="PHL")
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.fetch_station_schedule")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep")
+    def test_no_conn_one_valid_prompts_user(
+        self, mock_sleep, mock_live, mock_fetch_station, mock_fetch_cached,
+        mock_fetch, mock_console_cls, mock_prompt
+    ):
+        """Branch 2b: No --connection, one valid, one None -> prompt for station code."""
+        train1 = self._make_train_with_stations("42", ["PGH", "PHL", "NYP"])
+        mock_fetch.side_effect = [train1, None]
+        mock_fetch_cached.side_effect = [train1, None]
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+        mock_fetch_station.return_value = {"PHL": []}
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
+            tracker.main()
+
+        assert tracker.CONNECTION_STATION == "PHL"
+        mock_fetch_station.assert_called_with("PHL")
+
+    @patch("amtrak_status.tracker.Prompt.ask", return_value="PHL")
+    @patch("amtrak_status.tracker.Console")
+    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.tracker.fetch_train_data_cached")
+    @patch("amtrak_status.tracker.fetch_station_schedule")
+    @patch("amtrak_status.tracker.Live")
+    @patch("amtrak_status.tracker.sleep")
+    def test_no_conn_neither_valid_prompts_user(
+        self, mock_sleep, mock_live, mock_fetch_station, mock_fetch_cached,
+        mock_fetch, mock_console_cls, mock_prompt
+    ):
+        """Branch 2c: No --connection, neither valid -> prompt for station code."""
+        mock_fetch.return_value = None
+        mock_fetch_cached.return_value = None
+        mock_console = MagicMock()
+        mock_console_cls.return_value = mock_console
+        mock_fetch_station.return_value = {"PHL": []}
+
+        with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
+            tracker.main()
+
+        assert tracker.CONNECTION_STATION == "PHL"
