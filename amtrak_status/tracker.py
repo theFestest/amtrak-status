@@ -1164,23 +1164,38 @@ def build_predeparture_header(train_number: str) -> Panel:
     return Panel(content, border_style="yellow")
 
 
+def _apply_main_title(panel: Panel) -> None:
+    """Add the main 'Amtrak Status' title and status subtitle to a panel."""
+    panel.title = "[bold cyan]Amtrak Status[/]"
+    status_parts = []
+    if _last_fetch_time:
+        status_parts.append(f"Updated: {_last_fetch_time.strftime('%H:%M:%S')}")
+    else:
+        status_parts.append("Updated: —")
+    if _last_error:
+        status_parts.append(f"[yellow]⚠ {_last_error}[/]")
+    status_parts.append(f"Refresh: {REFRESH_INTERVAL}s")
+    status_parts.append("Press Ctrl+C to quit")
+    panel.subtitle = f"[dim]{' | '.join(status_parts)}[/]"
+
+
 def build_multi_train_display(train_numbers: list[str], connection_station: str, show_all: bool = False) -> Layout:
     """Build display for multiple trains with connection info."""
     layout = Layout()
-    
+
     # Fetch data for all trains
     trains_data = []
     for num in train_numbers:
         data = fetch_train_data_cached(num)
         trains_data.append((num, data))
-    
+
     train1_num, train1_data = trains_data[0]
     train2_num, train2_data = trains_data[1] if len(trains_data) > 1 else (None, None)
-    
+
     # Check what we have
     train1_valid = train1_data and "error" not in train1_data
     train2_valid = train2_data and "error" not in train2_data
-    
+
     # If neither train is valid, show error
     if not train1_valid and not train2_valid:
         error_content = Table.grid()
@@ -1204,7 +1219,9 @@ def build_multi_train_display(train_numbers: list[str], connection_station: str,
             Layout(name="stations", ratio=1),
         )
         
-        layout["train1_header"].update(build_compact_train_header(train1_data))
+        train1_panel = build_compact_train_header(train1_data)
+        _apply_main_title(train1_panel)
+        layout["train1_header"].update(train1_panel)
         layout["connection"].update(build_connection_panel(train1_data, train2_data, connection_station))
         layout["train2_header"].update(build_compact_train_header(train2_data))
         
@@ -1231,7 +1248,9 @@ def build_multi_train_display(train_numbers: list[str], connection_station: str,
             Layout(name="stations", ratio=1),
         )
         
-        layout["train1_header"].update(build_compact_train_header(train1_data))
+        train1_panel = build_compact_train_header(train1_data)
+        _apply_main_title(train1_panel)
+        layout["train1_header"].update(train1_panel)
         layout["train2_header"].update(build_predeparture_header(train2_num))
         
         # Show a simplified connection panel
@@ -1288,7 +1307,9 @@ def build_multi_train_display(train_numbers: list[str], connection_station: str,
             Layout(name="stations", ratio=1),
         )
         
-        layout["train1_header"].update(build_predeparture_header(train1_num))
+        train1_panel = build_predeparture_header(train1_num)
+        _apply_main_title(train1_panel)
+        layout["train1_header"].update(train1_panel)
         layout["train2_header"].update(build_compact_train_header(train2_data))
         
         # Simplified connection panel
@@ -1978,11 +1999,18 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
     
     # Multi-train mode
     else:
+        def _check_multi_train_notifications():
+            """Check notifications for all tracked trains using cached data."""
+            for num in train_numbers[:2]:
+                if num in _train_caches and _train_caches[num].get("data"):
+                    check_and_notify(_train_caches[num]["data"])
+
         if args.once:
             result = build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=getattr(args, 'all', False))
             console.print(result)
+            _check_multi_train_notifications()
             return
-        
+
         if COMPACT_MODE:
             # Compact mode for multi-train - show both trains on separate lines
             console.print("[yellow]Compact mode with connections - showing basic info[/]")
@@ -1995,11 +2023,12 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                             console.print(build_compact_display(data))
                         else:
                             console.print(Text(f"🚂 Train #{num}: Error or not found", style="red"))
+                    _check_multi_train_notifications()
                     sleep(REFRESH_INTERVAL)
             except KeyboardInterrupt:
                 pass
             return
-        
+
         try:
             with Live(
                 build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=getattr(args, 'all', False)),
@@ -2007,9 +2036,12 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                 refresh_per_second=1,
                 screen=True
             ) as live:
+                _check_multi_train_notifications()
+
                 while True:
                     sleep(REFRESH_INTERVAL)
                     live.update(build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=getattr(args, 'all', False)))
+                    _check_multi_train_notifications()
         except KeyboardInterrupt:
             console.print("\n[dim]Tracking stopped.[/]")
             sys.exit(0)
