@@ -1615,3 +1615,307 @@ class TestFilterStationsEmptyString:
         assert len(result) == 3
         assert before == 0
         assert after == 0
+
+
+# =============================================================================
+# Journey Phase Rendering Tests
+# =============================================================================
+
+
+class TestJourneyPhaseHeaderRendering:
+    """Test that the header panel renders correct content at each journey phase."""
+
+    def test_predeparture_shows_status_and_no_position(self):
+        train = journey_at_phase("predeparture")
+        text = render_to_text(tracker.build_header(train))
+        assert "Predeparture" in text
+        assert "Position:" not in text
+
+    def test_predeparture_shows_first_station_as_next(self):
+        train = journey_at_phase("predeparture")
+        text = render_to_text(tracker.build_header(train))
+        assert "Next: Pittsburgh" in text
+
+    def test_early_shows_next_and_position(self):
+        train = journey_at_phase("early")
+        text = render_to_text(tracker.build_header(train))
+        assert "On Time" in text
+        assert "Next: Greensburg" in text
+        assert "Position:" in text
+        assert "PGH" in text
+
+    def test_early_shows_speed(self):
+        train = journey_at_phase("early")
+        text = render_to_text(tracker.build_header(train))
+        assert "55 mph" in text
+
+    def test_mid_shows_next_station_and_speed(self):
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_header(train))
+        assert "Next: Harrisburg" in text
+        assert "62 mph" in text
+
+    def test_mid_shows_position_between_gbg_and_hbg(self):
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_header(train))
+        assert "Position:" in text
+        assert "GBG" in text
+        assert "HBG" in text
+
+    def test_mid_position_shows_minutes_remaining(self):
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_header(train))
+        assert "(35 min)" in text
+
+    def test_mid_late_shows_delay_status(self):
+        train = journey_at_phase("mid_late")
+        text = render_to_text(tracker.build_header(train))
+        assert "25 Minutes Late" in text
+
+    def test_mid_late_shows_delay_in_eta(self):
+        train = journey_at_phase("mid_late")
+        text = render_to_text(tracker.build_header(train))
+        assert "(+25m)" in text
+
+    def test_arriving_shows_philadelphia_as_next(self):
+        train = journey_at_phase("arriving")
+        text = render_to_text(tracker.build_header(train))
+        assert "Next: Philadelphia" in text
+
+    def test_arriving_shows_early_arrival_indicator(self):
+        train = journey_at_phase("arriving")
+        text = render_to_text(tracker.build_header(train))
+        # PHL arrived 2 min early
+        assert "(-2m)" in text
+
+    def test_arriving_no_speed_displayed(self):
+        """velocity=0 renders speed as dash, not 'mph'."""
+        train = journey_at_phase("arriving")
+        text = render_to_text(tracker.build_header(train))
+        assert "mph" not in text
+
+    def test_final_leg_shows_nyp_and_speed(self):
+        train = journey_at_phase("final_leg")
+        text = render_to_text(tracker.build_header(train))
+        assert "Next: New York Penn" in text
+        assert "70 mph" in text
+
+    def test_final_leg_position_shows_phl_nyp(self):
+        train = journey_at_phase("final_leg")
+        text = render_to_text(tracker.build_header(train))
+        assert "Position:" in text
+        assert "PHL" in text
+        assert "NYP" in text
+
+    @pytest.mark.parametrize("phase", [
+        "predeparture", "early", "mid", "mid_late", "arriving", "final_leg",
+    ])
+    def test_all_phases_show_route_and_destination(self, phase):
+        train = journey_at_phase(phase)
+        text = render_to_text(tracker.build_header(train))
+        assert "Pennsylvanian" in text
+        assert "New York Penn" in text
+
+
+class TestJourneyPhaseProgressBar:
+    """Test that progress bar shows correct completion at each phase."""
+
+    @pytest.mark.parametrize("phase,expected_pct", [
+        ("predeparture", "0%"),
+        ("early", "20%"),
+        ("mid", "40%"),
+        ("mid_late", "40%"),
+        ("arriving", "60%"),
+        ("final_leg", "80%"),
+    ])
+    def test_progress_percentage(self, phase, expected_pct):
+        train = journey_at_phase(phase)
+        text = render_to_text(tracker.build_progress_bar(train))
+        assert expected_pct in text
+        assert "Journey Progress" in text
+
+    @pytest.mark.parametrize("phase", [
+        "predeparture", "early", "mid", "mid_late", "arriving", "final_leg",
+    ])
+    def test_progress_shows_origin(self, phase):
+        train = journey_at_phase(phase)
+        text = render_to_text(tracker.build_progress_bar(train))
+        assert "Pittsburgh" in text
+
+
+class TestJourneyPhaseStationsTable:
+    """Test that the stations table shows correct statuses and icons at each phase."""
+
+    def test_predeparture_all_scheduled(self):
+        train = journey_at_phase("predeparture")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert text.count("Scheduled") == 5
+        assert "Departed" not in text
+        assert "Enroute" not in text
+
+    def test_predeparture_only_open_circle_icons(self):
+        train = journey_at_phase("predeparture")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert "○" in text
+        assert "✓" not in text
+        assert "→" not in text
+        assert "●" not in text
+
+    def test_early_one_departed_one_enroute(self):
+        train = journey_at_phase("early")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert text.count("Departed") == 1
+        assert text.count("Enroute") == 1
+        assert text.count("Scheduled") == 3
+        assert "✓" in text
+        assert "→" in text
+
+    def test_mid_two_departed_one_enroute(self):
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert text.count("Departed") == 2
+        assert text.count("Enroute") == 1
+        assert text.count("Scheduled") == 2
+
+    def test_arriving_three_departed_at_station(self):
+        train = journey_at_phase("arriving")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert text.count("Departed") == 3
+        assert "●" in text  # PHL at station
+        assert text.count("Scheduled") == 1  # NYP only
+
+    def test_final_leg_four_departed_one_enroute(self):
+        train = journey_at_phase("final_leg")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert text.count("Departed") == 4
+        assert text.count("Enroute") == 1
+
+    @pytest.mark.parametrize("phase", [
+        "predeparture", "early", "mid", "mid_late", "arriving", "final_leg",
+    ])
+    def test_all_phases_list_all_stations(self, phase):
+        """Every phase should list all 5 station names and codes when focus=False."""
+        train = journey_at_phase(phase)
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        for name in ("Pittsburgh", "Greensburg", "Harrisburg", "Philadelphia", "New York Penn"):
+            assert name in text, f"{name} missing in {phase}"
+        for code in ("PGH", "GBG", "HBG", "PHL", "NYP"):
+            assert code in text, f"{code} missing in {phase}"
+
+
+class TestJourneyPhaseCompactDisplay:
+    """Test compact single-line display at key phases."""
+
+    @pytest.mark.parametrize("phase", [
+        "predeparture", "early", "mid", "mid_late", "arriving", "final_leg",
+    ])
+    def test_compact_shows_route_and_train(self, phase):
+        train = journey_at_phase(phase)
+        text = render_to_text(tracker.build_compact_display(train))
+        assert "Pennsylvanian" in text
+        assert "#42" in text
+
+    @pytest.mark.parametrize("phase,expected_pct", [
+        ("predeparture", "0%"),
+        ("early", "20%"),
+        ("mid", "40%"),
+        ("arriving", "60%"),
+        ("final_leg", "80%"),
+    ])
+    def test_compact_progress_percentage(self, phase, expected_pct):
+        train = journey_at_phase(phase)
+        text = render_to_text(tracker.build_compact_display(train))
+        assert expected_pct in text
+
+    def test_compact_mid_late_shows_delay(self):
+        train = journey_at_phase("mid_late")
+        text = render_to_text(tracker.build_compact_display(train))
+        assert "25 Minutes Late" in text
+        assert "+25m" in text
+
+    def test_compact_early_shows_speed(self):
+        train = journey_at_phase("early")
+        text = render_to_text(tracker.build_compact_display(train))
+        assert "55mph" in text
+
+    def test_compact_final_leg_shows_speed(self):
+        train = journey_at_phase("final_leg")
+        text = render_to_text(tracker.build_compact_display(train))
+        assert "70mph" in text
+
+    def test_compact_mid_shows_position_between_stations(self):
+        """Mid phase should show inter-station position with GBG and HBG."""
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_compact_display(train))
+        assert "GBG" in text
+        assert "HBG" in text
+
+    def test_compact_predeparture_shows_next_station(self):
+        """Predeparture has no position info, so should fall back to 'Next:'."""
+        train = journey_at_phase("predeparture")
+        text = render_to_text(tracker.build_compact_display(train))
+        assert "Next:" in text
+
+
+class TestRenderedContentDetails:
+    """Test content details and relative positioning in rendered output."""
+
+    def test_stations_appear_in_route_order(self):
+        """Station rows should appear top-to-bottom in route order."""
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        names = ["Pittsburgh", "Greensburg", "Harrisburg", "Philadelphia", "New York Penn"]
+        positions = [text.index(name) for name in names]
+        assert positions == sorted(positions)
+
+    def test_departed_stations_show_formatted_times(self):
+        """Departed stations should show human-readable AM/PM times, not raw timestamps."""
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert "AM" in text or "PM" in text
+
+    def test_cancelled_station_renders_with_label_and_icon(self):
+        """A cancelled station should show 'Cancelled' text and ✗ icon."""
+        stations = sample_journey_stations()
+        stations.insert(2, make_station(code="XXX", name="Cancelled Stop"))
+        train = make_train(stations=stations)
+        text = render_to_text(tracker.build_stations_table(train, focus=False))
+        assert "Cancelled" in text
+        assert "✗" in text
+        assert "Cancelled Stop" in text
+
+    def test_focus_mode_shows_elision_message(self):
+        """With >10 stations and focus mode, old departed stops should be hidden."""
+        stations = []
+        for i in range(15):
+            if i < 10:
+                stations.append(make_station(
+                    code=f"S{i:02d}", name=f"Station {i:02d}",
+                    status="Departed", sch_dep=i * 100,
+                ))
+            elif i == 10:
+                stations.append(make_station(
+                    code=f"S{i:02d}", name=f"Station {i:02d}",
+                    status="Enroute", sch_arr=i * 100, sch_dep=i * 100 + 50,
+                ))
+            else:
+                stations.append(make_station(
+                    code=f"S{i:02d}", name=f"Station {i:02d}",
+                    status="", sch_arr=i * 100,
+                ))
+        train = make_train(stations=stations)
+        text = render_to_text(tracker.build_stations_table(train, focus=True))
+        assert "departed stops hidden" in text
+
+    def test_station_filter_hides_omitted_and_shows_indicators(self):
+        """Station filter should show omission indicators and hide filtered-out stations."""
+        tracker.STATION_FROM = "GBG"
+        tracker.STATION_TO = "PHL"
+        train = journey_at_phase("mid")
+        text = render_to_text(tracker.build_stations_table(train))
+        assert "earlier stops omitted" in text
+        assert "later stops omitted" in text
+        assert "Greensburg" in text
+        assert "Philadelphia" in text
+        assert "Pittsburgh (PGH)" not in text
+        assert "New York Penn (NYP)" not in text
