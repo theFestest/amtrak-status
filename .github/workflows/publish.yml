@@ -15,35 +15,23 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
     - uses: actions/checkout@v6
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+    - uses: astral-sh/setup-uv@v4
       with:
-        python-version: ${{ matrix.python-version }}
-        cache: pip
-        cache-dependency-path: pyproject.toml
-    - name: Install dependencies
-      run: |
-        pip install . --group dev
+        enable-cache: true
+        cache-dependency-glob: uv.lock
     - name: Run tests
-      run: |
-        python -m pytest
+      run: uv run --python ${{ matrix.python-version }} pytest
   build:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
     - uses: actions/checkout@v6
-    - name: Set up Python
-      uses: actions/setup-python@v6
+    - uses: astral-sh/setup-uv@v4
       with:
-        python-version: "3.14"
-        cache: pip
-        cache-dependency-path: pyproject.toml
-    - name: Install dependencies
-      run: |
-        pip install setuptools wheel build
+        enable-cache: true
+        cache-dependency-glob: uv.lock
     - name: Build
-      run: |
-        python -m build
+      run: uv build
     - name: Store the distribution packages
       uses: actions/upload-artifact@v4
       with:
@@ -65,4 +53,3 @@ jobs:
         path: dist/
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
-

@@ -1,5 +1,5 @@
-from amtrak_status import example_function
+from amtrak_status.tracker import main
 
 
-def test_example_function():
-    assert example_function() == 2
+def test_main_exists():
+    assert callable(main)

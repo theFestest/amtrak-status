@@ -9,4 +9,3 @@ venv
 .DS_Store
 dist
 build
-uv.lock
