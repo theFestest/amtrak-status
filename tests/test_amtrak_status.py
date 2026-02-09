@@ -1,7 +1,6 @@
 """Comprehensive tests for amtrak_status.tracker module."""
 
-import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -13,7 +12,7 @@ import amtrak_status.tracker as tracker
 
 # Shared helpers from conftest (imported explicitly for use in test code)
 from conftest import (
-    make_station, make_train, ts_ms, FIXED_NOW,
+    make_station, make_train, to_iso, FIXED_NOW,
     sample_journey_stations, render_to_text, journey_at_phase,
 )
 
@@ -26,22 +25,6 @@ from conftest import (
 class TestParseTime:
     def test_none(self):
         assert tracker.parse_time(None) is None
-
-    def test_int_ms_timestamp(self):
-        # 2025-07-01 00:00:00 UTC — safely 2025 in all US timezones
-        ms = 1751328000000
-        dt = tracker.parse_time(ms)
-        assert dt is not None
-        assert dt.year == 2025
-        assert dt.month in (6, 7)  # June 30 or July 1 depending on local tz
-
-    def test_float_ms_timestamp(self):
-        dt = tracker.parse_time(1735689600000.0)
-        assert dt is not None
-
-    def test_string_digit_timestamp(self):
-        dt = tracker.parse_time("1735689600000")
-        assert dt is not None
 
     def test_iso_string(self):
         dt = tracker.parse_time("2025-03-15T14:30:00")
@@ -63,14 +46,11 @@ class TestParseTime:
         assert tracker.parse_time("not-a-time") is None
 
     def test_empty_string(self):
-        # empty string is not digits, not ISO — should return None
         assert tracker.parse_time("") is None
 
-    def test_negative_timestamp(self):
-        # Negative timestamps are unusual but shouldn't crash
-        result = tracker.parse_time(-1000)
-        # May return a datetime or None depending on platform; just don't crash
-        assert result is None or isinstance(result, datetime)
+    def test_non_string_returns_none(self):
+        assert tracker.parse_time(12345) is None
+        assert tracker.parse_time(3.14) is None
 
 
 # =============================================================================
@@ -117,23 +97,23 @@ class TestFormatTime:
 
 class TestIsStationCancelled:
     def test_normal_station_not_cancelled(self):
-        station = make_station(status="Departed", sch_arr=100, sch_dep=200)
+        station = make_station(status="Departed", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00")
         assert tracker.is_station_cancelled(station) is False
 
     def test_enroute_station_not_cancelled(self):
-        station = make_station(status="Enroute", sch_arr=100, sch_dep=200)
+        station = make_station(status="Enroute", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00")
         assert tracker.is_station_cancelled(station) is False
 
     def test_cancel_in_status(self):
-        station = make_station(status="Cancelled", sch_arr=100, sch_dep=200)
+        station = make_station(status="Cancelled", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00")
         assert tracker.is_station_cancelled(station) is True
 
     def test_skip_in_status(self):
-        station = make_station(status="Skipped", sch_arr=100, sch_dep=200)
+        station = make_station(status="Skipped", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00")
         assert tracker.is_station_cancelled(station) is True
 
     def test_cancel_case_insensitive(self):
-        station = make_station(status="CANCELLED", sch_arr=100, sch_dep=200)
+        station = make_station(status="CANCELLED", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00")
         assert tracker.is_station_cancelled(station) is True
 
     def test_no_scheduled_times_is_cancelled(self):
@@ -143,19 +123,19 @@ class TestIsStationCancelled:
     def test_station_status_no_actual_times_is_cancelled(self):
         # Station status but no arr/dep means train never actually stopped
         station = make_station(
-            status="Station", sch_arr=100, sch_dep=200, arr=None, dep=None
+            status="Station", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00", arr=None, dep=None
         )
         assert tracker.is_station_cancelled(station) is True
 
     def test_station_status_with_actual_times_not_cancelled(self):
         station = make_station(
-            status="Station", sch_arr=100, sch_dep=200, arr=300, dep=None
+            status="Station", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00", arr="2025-03-15T12:00:00", dep=None
         )
         assert tracker.is_station_cancelled(station) is False
 
     def test_origin_with_only_sch_dep(self):
         # Origin station: has schDep but no schArr — should NOT be cancelled
-        station = make_station(status="Departed", sch_arr=None, sch_dep=100)
+        station = make_station(status="Departed", sch_arr=None, sch_dep="2025-03-15T10:00:00")
         assert tracker.is_station_cancelled(station) is False
 
     def test_empty_string_times_treated_as_falsy(self):
@@ -235,42 +215,42 @@ class TestFindStationIndex:
 class TestFindCurrentStationIndex:
     def test_mid_journey(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
-            make_station(status="Departed", sch_arr=200, sch_dep=300),
-            make_station(status="Enroute", sch_arr=400, sch_dep=500),
-            make_station(status="", sch_arr=600),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(status="Departed", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
+            make_station(status="Enroute", sch_arr="2025-03-15T13:00:00", sch_dep="2025-03-15T14:00:00"),
+            make_station(status="", sch_arr="2025-03-15T15:00:00"),
         ]
         assert tracker.find_current_station_index(stations) == 2
 
     def test_all_departed(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
-            make_station(status="Departed", sch_arr=200, sch_dep=300),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(status="Departed", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
         ]
         # Default to last station
         assert tracker.find_current_station_index(stations) == len(stations) - 1
 
     def test_all_future(self):
         stations = [
-            make_station(status="", sch_arr=100, sch_dep=200),
-            make_station(status="", sch_arr=300),
+            make_station(status="", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00"),
+            make_station(status="", sch_arr="2025-03-15T12:00:00"),
         ]
         assert tracker.find_current_station_index(stations) == 0
 
     def test_at_station(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
-            make_station(status="Station", sch_arr=200, arr=250),
-            make_station(status="", sch_arr=400),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(status="Station", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T11:30:00"),
+            make_station(status="", sch_arr="2025-03-15T13:00:00"),
         ]
         assert tracker.find_current_station_index(stations) == 1
 
     def test_skips_cancelled(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
             # Cancelled: no times
             make_station(status="", sch_arr=None, sch_dep=None),
-            make_station(status="Enroute", sch_arr=200, sch_dep=300),
+            make_station(status="Enroute", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
         ]
         # Should skip the cancelled station and find Enroute at index 2
         assert tracker.find_current_station_index(stations) == 2
@@ -355,10 +335,10 @@ class TestFilterStations:
 class TestCalculateProgress:
     def test_mid_journey(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
-            make_station(status="Departed", sch_arr=100, sch_dep=200),
-            make_station(status="Enroute", sch_arr=200, sch_dep=300),
-            make_station(status="", sch_arr=400),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(status="Departed", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00"),
+            make_station(status="Enroute", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
+            make_station(status="", sch_arr="2025-03-15T13:00:00"),
         ]
         completed, current_idx, total = tracker.calculate_progress(stations)
         assert completed == 2
@@ -367,8 +347,8 @@ class TestCalculateProgress:
 
     def test_all_departed(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
-            make_station(status="Departed", sch_arr=200, sch_dep=300),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(status="Departed", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
         ]
         completed, current_idx, total = tracker.calculate_progress(stations)
         assert completed == 2
@@ -376,8 +356,8 @@ class TestCalculateProgress:
 
     def test_all_future(self):
         stations = [
-            make_station(status="", sch_dep=100),
-            make_station(status="", sch_arr=200),
+            make_station(status="", sch_dep="2025-03-15T10:00:00"),
+            make_station(status="", sch_arr="2025-03-15T11:00:00"),
         ]
         completed, current_idx, total = tracker.calculate_progress(stations)
         assert completed == 0
@@ -385,9 +365,9 @@ class TestCalculateProgress:
 
     def test_at_station(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
-            make_station(status="Station", sch_arr=200, arr=250),
-            make_station(status="", sch_arr=400),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(status="Station", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T11:30:00"),
+            make_station(status="", sch_arr="2025-03-15T13:00:00"),
         ]
         completed, current_idx, total = tracker.calculate_progress(stations)
         assert completed == 1
@@ -395,10 +375,10 @@ class TestCalculateProgress:
 
     def test_cancelled_stations_excluded(self):
         stations = [
-            make_station(status="Departed", sch_dep=100),
+            make_station(status="Departed", sch_dep="2025-03-15T10:00:00"),
             make_station(status="", sch_arr=None, sch_dep=None),  # cancelled
-            make_station(status="Enroute", sch_arr=300, sch_dep=400),
-            make_station(status="", sch_arr=500),
+            make_station(status="Enroute", sch_arr="2025-03-15T12:00:00", sch_dep="2025-03-15T13:00:00"),
+            make_station(status="", sch_arr="2025-03-15T14:00:00"),
         ]
         completed, current_idx, total = tracker.calculate_progress(stations)
         assert total == 3  # cancelled station excluded
@@ -418,8 +398,8 @@ class TestCalculatePositionBetweenStations:
     def test_normal_position(self):
         """Train departed station A, heading to station B."""
         now = FIXED_NOW
-        dep_time = ts_ms(now - timedelta(minutes=30))
-        arr_time = ts_ms(now + timedelta(minutes=30))
+        dep_time = to_iso(now - timedelta(minutes=30))
+        arr_time = to_iso(now + timedelta(minutes=30))
 
         train = make_train(stations=[
             make_station(code="A", status="Departed", dep=dep_time, sch_dep=dep_time),
@@ -436,21 +416,21 @@ class TestCalculatePositionBetweenStations:
 
     def test_no_departed_station(self):
         train = make_train(stations=[
-            make_station(code="A", status="Enroute", sch_arr=100),
-            make_station(code="B", status="", sch_arr=200),
+            make_station(code="A", status="Enroute", sch_arr="2025-03-15T10:00:00"),
+            make_station(code="B", status="", sch_arr="2025-03-15T11:00:00"),
         ])
         assert tracker.calculate_position_between_stations(train) is None
 
     def test_no_future_station(self):
         train = make_train(stations=[
-            make_station(code="A", status="Departed", dep=100, sch_dep=100),
+            make_station(code="A", status="Departed", dep="2025-03-15T10:00:00", sch_dep="2025-03-15T10:00:00"),
         ])
         assert tracker.calculate_position_between_stations(train) is None
 
     def test_skips_cancelled_stations(self):
         now = FIXED_NOW
-        dep_time = ts_ms(now - timedelta(minutes=20))
-        arr_time = ts_ms(now + timedelta(minutes=40))
+        dep_time = to_iso(now - timedelta(minutes=20))
+        arr_time = to_iso(now + timedelta(minutes=40))
 
         train = make_train(stations=[
             make_station(code="A", status="Departed", dep=dep_time, sch_dep=dep_time),
@@ -468,7 +448,7 @@ class TestCalculatePositionBetweenStations:
     def test_zero_duration(self):
         """When dep and arr times are the same, progress should be 1.0."""
         now = FIXED_NOW
-        same_time = ts_ms(now - timedelta(minutes=5))
+        same_time = to_iso(now - timedelta(minutes=5))
 
         train = make_train(stations=[
             make_station(code="A", status="Departed", dep=same_time, sch_dep=same_time),
@@ -527,7 +507,7 @@ class TestFindOverlappingStations:
 class TestGetStationTimes:
     def test_found(self):
         train = make_train(stations=[
-            make_station(code="PHL", sch_arr=1000, sch_dep=2000, arr=1500, dep=2500),
+            make_station(code="PHL", sch_arr="2025-03-15T10:00:00", sch_dep="2025-03-15T11:00:00", arr="2025-03-15T10:30:00", dep="2025-03-15T11:30:00"),
         ])
         sch_arr, sch_dep, arr, dep = tracker.get_station_times(train, "PHL")
         assert sch_arr is not None
@@ -542,7 +522,7 @@ class TestGetStationTimes:
 
     def test_case_insensitive(self):
         train = make_train(stations=[
-            make_station(code="PHL", sch_arr=1000),
+            make_station(code="PHL", sch_arr="2025-03-15T10:00:00"),
         ])
         sch_arr, _, _, _ = tracker.get_station_times(train, "phl")
         assert sch_arr is not None
@@ -592,8 +572,8 @@ class TestCalculateLayover:
     def test_comfortable_layover(self):
         """Layover >= 60 min should be 'comfortable'."""
         now = datetime.now()
-        arr = ts_ms(now)
-        dep = ts_ms(now + timedelta(minutes=90))
+        arr = to_iso(now)
+        dep = to_iso(now + timedelta(minutes=90))
         train1, train2 = self._make_trains(arr, dep)
 
         result = tracker.calculate_layover(train1, train2, "PHL")
@@ -604,8 +584,8 @@ class TestCalculateLayover:
     def test_risky_layover(self):
         """Layover < 30 min should be 'risky'."""
         now = datetime.now()
-        arr = ts_ms(now)
-        dep = ts_ms(now + timedelta(minutes=20))
+        arr = to_iso(now)
+        dep = to_iso(now + timedelta(minutes=20))
         train1, train2 = self._make_trains(arr, dep)
 
         result = tracker.calculate_layover(train1, train2, "PHL")
@@ -615,8 +595,8 @@ class TestCalculateLayover:
     def test_missed_connection(self):
         """Negative layover (train2 departs before train1 arrives)."""
         now = datetime.now()
-        arr = ts_ms(now + timedelta(minutes=30))
-        dep = ts_ms(now)
+        arr = to_iso(now + timedelta(minutes=30))
+        dep = to_iso(now)
         train1, train2 = self._make_trains(arr, dep)
 
         result = tracker.calculate_layover(train1, train2, "PHL")
@@ -627,8 +607,8 @@ class TestCalculateLayover:
     def test_tight_layover_30_to_44(self):
         """Layover 30-44 min should be 'tight'."""
         now = datetime.now()
-        arr = ts_ms(now)
-        dep = ts_ms(now + timedelta(minutes=35))
+        arr = to_iso(now)
+        dep = to_iso(now + timedelta(minutes=35))
         train1, train2 = self._make_trains(arr, dep)
 
         result = tracker.calculate_layover(train1, train2, "PHL")
@@ -642,8 +622,8 @@ class TestCalculateLayover:
     def test_layover_45_to_59_should_not_be_tight(self):
         """Layover 45-59 min should be distinct from 30-44 min (currently both 'tight')."""
         now = datetime.now()
-        arr = ts_ms(now)
-        dep = ts_ms(now + timedelta(minutes=50))
+        arr = to_iso(now)
+        dep = to_iso(now + timedelta(minutes=50))
         train1, train2 = self._make_trains(arr, dep)
 
         result = tracker.calculate_layover(train1, train2, "PHL")
@@ -654,8 +634,8 @@ class TestCalculateLayover:
     def test_train2_already_departed_is_missed(self):
         """If train2 departed and train1 hasn't arrived, connection is missed."""
         now = datetime.now()
-        arr = ts_ms(now + timedelta(minutes=30))
-        dep = ts_ms(now - timedelta(minutes=10))
+        arr = to_iso(now + timedelta(minutes=30))
+        dep = to_iso(now - timedelta(minutes=10))
 
         train1 = make_train(stations=[
             make_station(code="PHL", name="Philadelphia", status="Enroute",
@@ -771,10 +751,10 @@ class TestBuildPredepartureTrainData:
 class TestInitializeNotificationState:
     def test_marks_departed_as_seen(self):
         train = make_train(stations=[
-            make_station(code="A", status="Departed", sch_dep=100),
-            make_station(code="B", status="Departed", sch_arr=200, sch_dep=300),
-            make_station(code="C", status="Enroute", sch_arr=400, sch_dep=500),
-            make_station(code="D", status="", sch_arr=600),
+            make_station(code="A", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="B", status="Departed", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
+            make_station(code="C", status="Enroute", sch_arr="2025-03-15T13:00:00", sch_dep="2025-03-15T14:00:00"),
+            make_station(code="D", status="", sch_arr="2025-03-15T15:00:00"),
         ])
         tracker.initialize_notification_state(train)
         assert "A" in tracker._notified_stations
@@ -785,15 +765,15 @@ class TestInitializeNotificationState:
 
     def test_idempotent(self):
         train = make_train(stations=[
-            make_station(code="A", status="Departed", sch_dep=100),
+            make_station(code="A", status="Departed", sch_dep="2025-03-15T10:00:00"),
         ])
         tracker.initialize_notification_state(train)
         first = tracker._notified_stations.copy()
 
         # Call again with different data — should not change anything
         train2 = make_train(stations=[
-            make_station(code="A", status="Departed", sch_dep=100),
-            make_station(code="B", status="Departed", sch_arr=200, sch_dep=300),
+            make_station(code="A", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="B", status="Departed", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
         ])
         tracker.initialize_notification_state(train2)
         assert tracker._notified_stations == first
@@ -807,7 +787,7 @@ class TestInitializeNotificationState:
 class TestCheckAndNotify:
     def test_no_notify_config_returns_empty(self):
         train = make_train(stations=[
-            make_station(code="A", status="Station", sch_arr=100, arr=200),
+            make_station(code="A", status="Station", sch_arr="2025-03-15T10:00:00", arr="2025-03-15T11:00:00"),
         ])
         result = tracker.check_and_notify(train)
         assert result == []
@@ -819,16 +799,16 @@ class TestCheckAndNotify:
 
         # Step 1: Initialize with PHL still en route
         train_before = make_train(stations=[
-            make_station(code="PGH", status="Departed", sch_dep=100),
-            make_station(code="PHL", status="Enroute", sch_arr=200),
+            make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="PHL", status="Enroute", sch_arr="2025-03-15T11:00:00"),
         ])
         tracker.check_and_notify(train_before)
         mock_notify.reset_mock()
 
         # Step 2: PHL is now at Station — should trigger notification
         train_after = make_train(stations=[
-            make_station(code="PGH", status="Departed", sch_dep=100),
-            make_station(code="PHL", status="Station", sch_arr=200, arr=300),
+            make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="PHL", status="Station", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T12:00:00"),
         ])
         result = tracker.check_and_notify(train_after)
         assert "PHL" in result
@@ -841,15 +821,15 @@ class TestCheckAndNotify:
 
         # Init with PHL enroute
         train_before = make_train(stations=[
-            make_station(code="PGH", status="Departed", sch_dep=100),
-            make_station(code="PHL", status="Enroute", sch_arr=200),
+            make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="PHL", status="Enroute", sch_arr="2025-03-15T11:00:00"),
         ])
         tracker.check_and_notify(train_before)
 
         # PHL arrives — first notification
         train_after = make_train(stations=[
-            make_station(code="PGH", status="Departed", sch_dep=100),
-            make_station(code="PHL", status="Station", sch_arr=200, arr=300),
+            make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="PHL", status="Station", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T12:00:00"),
         ])
         tracker.check_and_notify(train_after)
         mock_notify.reset_mock()
@@ -866,18 +846,18 @@ class TestCheckAndNotify:
 
         # Init with HBG enroute
         train_before = make_train(stations=[
-            make_station(code="PGH", status="Departed", sch_dep=100),
-            make_station(code="HBG", status="Enroute", sch_arr=200),
-            make_station(code="PHL", status="", sch_arr=400),
+            make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="HBG", status="Enroute", sch_arr="2025-03-15T11:00:00"),
+            make_station(code="PHL", status="", sch_arr="2025-03-15T13:00:00"),
         ])
         tracker.check_and_notify(train_before)
         mock_notify.reset_mock()
 
         # HBG now at Station
         train_after = make_train(stations=[
-            make_station(code="PGH", status="Departed", sch_dep=100),
-            make_station(code="HBG", status="Station", sch_arr=200, arr=300),
-            make_station(code="PHL", status="", sch_arr=400),
+            make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="HBG", status="Station", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T12:00:00"),
+            make_station(code="PHL", status="", sch_arr="2025-03-15T13:00:00"),
         ])
         result = tracker.check_and_notify(train_after)
         assert "HBG" in result
@@ -886,8 +866,8 @@ class TestCheckAndNotify:
     def test_does_not_notify_for_unspecified_station(self, mock_notify):
         tracker.NOTIFY_STATIONS = {"NYP"}
         train = make_train(stations=[
-            make_station(code="PGH", status="Departed", sch_dep=100),
-            make_station(code="PHL", status="Station", sch_arr=200, arr=300),
+            make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+            make_station(code="PHL", status="Station", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T12:00:00"),
         ])
         result = tracker.check_and_notify(train)
         assert "PHL" not in result
@@ -1081,7 +1061,7 @@ class TestBuildHeader:
     def test_predeparture_header_content(self):
         train = make_train(
             train_state="Predeparture", status_msg="", velocity=0,
-            stations=[make_station(code="PGH", status="", sch_dep=100)],
+            stations=[make_station(code="PGH", status="", sch_dep="2025-03-15T10:00:00")],
         )
         panel = tracker.build_header(train)
         text = render_to_text(panel)
@@ -1191,7 +1171,7 @@ class TestBuildCompactTrainHeader:
     def test_predeparture_synthetic(self):
         train = make_train(
             train_state="Predeparture",
-            stations=[make_station(code="PHL", sch_dep=ts_ms(FIXED_NOW))],
+            stations=[make_station(code="PHL", sch_dep=to_iso(FIXED_NOW))],
         )
         train["_predeparture"] = True
         result = tracker.build_compact_train_header(train)
@@ -1201,7 +1181,7 @@ class TestBuildCompactTrainHeader:
         """Predeparture train with only schArr, not schDep."""
         train = make_train(
             train_state="Predeparture",
-            stations=[make_station(code="PHL", sch_arr=ts_ms(FIXED_NOW))],
+            stations=[make_station(code="PHL", sch_arr=to_iso(FIXED_NOW))],
         )
         train["_predeparture"] = True
         result = tracker.build_compact_train_header(train)
@@ -1261,20 +1241,20 @@ class TestBuildMultiTrainDisplay:
         train1 = make_train(
             train_num="42", route_name="Pennsylvanian",
             stations=[
-                make_station(code="PGH", status="Departed", sch_dep=ts_ms(now - timedelta(hours=3)),
-                             dep=ts_ms(now - timedelta(hours=3))),
+                make_station(code="PGH", status="Departed", sch_dep=to_iso(now - timedelta(hours=3)),
+                             dep=to_iso(now - timedelta(hours=3))),
                 make_station(code="PHL", status="Enroute",
-                             sch_arr=ts_ms(now + timedelta(hours=1)),
-                             arr=ts_ms(now + timedelta(hours=1))),
-                make_station(code="NYP", status="", sch_arr=ts_ms(now + timedelta(hours=3))),
+                             sch_arr=to_iso(now + timedelta(hours=1)),
+                             arr=to_iso(now + timedelta(hours=1))),
+                make_station(code="NYP", status="", sch_arr=to_iso(now + timedelta(hours=3))),
             ],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[
                 make_station(code="PHL", status="",
-                             sch_dep=ts_ms(now + timedelta(hours=2))),
-                make_station(code="HBG", status="", sch_arr=ts_ms(now + timedelta(hours=4))),
+                             sch_dep=to_iso(now + timedelta(hours=2))),
+                make_station(code="HBG", status="", sch_arr=to_iso(now + timedelta(hours=4))),
             ],
         )
         mock_fetch.side_effect = [train1, train2]
@@ -1293,8 +1273,8 @@ class TestBuildMultiTrainDisplay:
         train1 = make_train(
             train_num="42",
             stations=[
-                make_station(code="PGH", status="Departed", sch_dep=100),
-                make_station(code="PHL", status="Enroute", sch_arr=200, arr=300),
+                make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
+                make_station(code="PHL", status="Enroute", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T12:00:00"),
             ],
         )
         mock_fetch.side_effect = [train1, None]
@@ -1307,8 +1287,8 @@ class TestBuildMultiTrainDisplay:
         train2 = make_train(
             train_num="178",
             stations=[
-                make_station(code="PHL", status="", sch_dep=200),
-                make_station(code="HBG", status="", sch_arr=300),
+                make_station(code="PHL", status="", sch_dep="2025-03-15T11:00:00"),
+                make_station(code="HBG", status="", sch_arr="2025-03-15T12:00:00"),
             ],
         )
         mock_fetch.side_effect = [None, train2]
@@ -1434,16 +1414,16 @@ class TestMainArgParsing:
 
 
 # =============================================================================
-# Edge case / integration tests
+# Time Edge case
 # =============================================================================
 
 
 class TestTimezoneEdgeCases:
-    """Test that mixed timezone scenarios are handled."""
+    """Test that timezone handling is consistent for ISO strings."""
 
-    def test_parse_time_unix_is_naive(self):
-        """Unix timestamps produce naive datetimes (no tzinfo)."""
-        dt = tracker.parse_time(1735689600000)
+    def test_parse_time_naive_iso(self):
+        """ISO without offset produces naive datetimes."""
+        dt = tracker.parse_time("2025-03-15T14:30:00")
         assert dt is not None
         assert dt.tzinfo is None
 
@@ -1453,19 +1433,16 @@ class TestTimezoneEdgeCases:
         assert dt is not None
         assert dt.tzinfo is not None
 
-    @pytest.mark.xfail(
-        reason="BUG: parse_time returns naive dt for unix timestamps but aware dt "
-               "for ISO+Z strings. Comparing these downstream raises TypeError."
-    )
-    def test_comparing_naive_and_aware_raises(self):
-        """Mixing naive (unix) and aware (ISO+Z) datetimes should not happen."""
-        naive = tracker.parse_time(1735689600000)
-        aware = tracker.parse_time("2025-03-15T14:30:00Z")
-        assert naive is not None
-        assert aware is not None
-        # This comparison would raise TypeError in real code
-        # The test documents that this is a bug — both should be consistent
-        _ = naive < aware  # Should not raise if bug is fixed
+    def test_parse_time_iso_offset_is_aware(self):
+        """ISO with offset produces timezone-aware datetimes."""
+        dt = tracker.parse_time("2025-03-15T14:30:00-05:00")
+        assert dt is not None
+        assert dt.tzinfo is not None
+
+    def test_non_string_returns_none(self):
+        """Non-string values are rejected."""
+        assert tracker.parse_time(1735689600000) is None
+        assert tracker.parse_time(3.14) is None
 
 
 # =============================================================================
@@ -1529,11 +1506,11 @@ class TestMultiTrainArgParsing:
         """--connection sets CONNECTION_STATION."""
         train1 = make_train(
             train_num="42",
-            stations=[make_station(code="PHL", status="Enroute", sch_arr=100, arr=200)],
+            stations=[make_station(code="PHL", status="Enroute", sch_arr="2025-03-15T10:00:00", arr="2025-03-15T11:00:00")],
         )
         train2 = make_train(
             train_num="178",
-            stations=[make_station(code="PHL", status="", sch_dep=300)],
+            stations=[make_station(code="PHL", status="", sch_dep="2025-03-15T12:00:00")],
         )
         mock_fetch.side_effect = [train1, train2]
         mock_fetch_cached.side_effect = [train1, train2]
@@ -1598,7 +1575,7 @@ class TestSelectConnectionStation:
 
 
 # =============================================================================
-# Edge cases
+# Filter Station Edge cases
 # =============================================================================
 
 
@@ -1936,8 +1913,8 @@ class TestBuildConnectionPanel:
             train_num="42", route_name="Pennsylvanian",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=3)),
-                             dep=ts_ms(FIXED_NOW - timedelta(hours=3))),
+                             sch_dep=to_iso(FIXED_NOW - timedelta(hours=3)),
+                             dep=to_iso(FIXED_NOW - timedelta(hours=3))),
                 make_station(code="PHL", name="Philadelphia", status=train1_status,
                              sch_arr=arr_time, arr=arr_time),
             ],
@@ -1948,14 +1925,14 @@ class TestBuildConnectionPanel:
                 make_station(code="PHL", name="Philadelphia", status=train2_status,
                              sch_dep=dep_time, dep=dep_time if train2_status == "Departed" else None),
                 make_station(code="HBG", name="Harrisburg", status="",
-                             sch_arr=ts_ms(FIXED_NOW + timedelta(hours=4))),
+                             sch_arr=to_iso(FIXED_NOW + timedelta(hours=4))),
             ],
         )
         return train1, train2
 
     def test_comfortable_layover_rendering(self):
-        arr = ts_ms(FIXED_NOW)
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        arr = to_iso(FIXED_NOW)
+        dep = to_iso(FIXED_NOW + timedelta(minutes=90))
         train1, train2 = self._make_connection_trains(arr, dep)
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
@@ -1965,8 +1942,8 @@ class TestBuildConnectionPanel:
         assert "Connection at Philadelphia (PHL)" in text
 
     def test_risky_layover_rendering(self):
-        arr = ts_ms(FIXED_NOW)
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=20))
+        arr = to_iso(FIXED_NOW)
+        dep = to_iso(FIXED_NOW + timedelta(minutes=20))
         train1, train2 = self._make_connection_trains(arr, dep)
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
@@ -1975,8 +1952,8 @@ class TestBuildConnectionPanel:
         assert "⚠" in text
 
     def test_tight_layover_rendering(self):
-        arr = ts_ms(FIXED_NOW)
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=35))
+        arr = to_iso(FIXED_NOW)
+        dep = to_iso(FIXED_NOW + timedelta(minutes=35))
         train1, train2 = self._make_connection_trains(arr, dep)
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
@@ -1985,8 +1962,8 @@ class TestBuildConnectionPanel:
         assert "⚡" in text
 
     def test_missed_layover_rendering(self):
-        arr = ts_ms(FIXED_NOW + timedelta(minutes=30))
-        dep = ts_ms(FIXED_NOW)
+        arr = to_iso(FIXED_NOW + timedelta(minutes=30))
+        dep = to_iso(FIXED_NOW)
         train1, train2 = self._make_connection_trains(arr, dep)
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
@@ -2007,16 +1984,16 @@ class TestBuildConnectionPanel:
         assert "Layover unknown" in text
 
     def test_train1_arrived_shows_icon(self):
-        arr = ts_ms(FIXED_NOW - timedelta(minutes=10))
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        arr = to_iso(FIXED_NOW - timedelta(minutes=10))
+        dep = to_iso(FIXED_NOW + timedelta(minutes=90))
         train1, train2 = self._make_connection_trains(arr, dep, train1_status="Departed")
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
         assert "Arrived" in text
 
     def test_train1_at_station_shows_icon(self):
-        arr = ts_ms(FIXED_NOW)
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        arr = to_iso(FIXED_NOW)
+        dep = to_iso(FIXED_NOW + timedelta(minutes=90))
         train1, train2 = self._make_connection_trains(arr, dep, train1_status="Station")
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
@@ -2024,32 +2001,32 @@ class TestBuildConnectionPanel:
         assert "●" in text
 
     def test_train1_expected_shows_icon(self):
-        arr = ts_ms(FIXED_NOW + timedelta(minutes=30))
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=120))
+        arr = to_iso(FIXED_NOW + timedelta(minutes=30))
+        dep = to_iso(FIXED_NOW + timedelta(minutes=120))
         train1, train2 = self._make_connection_trains(arr, dep, train1_status="Enroute")
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
         assert "Expected" in text
 
     def test_train2_scheduled_shows_label(self):
-        arr = ts_ms(FIXED_NOW)
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=90))
+        arr = to_iso(FIXED_NOW)
+        dep = to_iso(FIXED_NOW + timedelta(minutes=90))
         train1, train2 = self._make_connection_trains(arr, dep, train2_status="")
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
         assert "Scheduled" in text
 
     def test_train2_boarding_shows_label(self):
-        arr = ts_ms(FIXED_NOW - timedelta(minutes=10))
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=10))
+        arr = to_iso(FIXED_NOW - timedelta(minutes=10))
+        dep = to_iso(FIXED_NOW + timedelta(minutes=10))
         train1, train2 = self._make_connection_trains(arr, dep, train1_status="Departed", train2_status="Station")
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
         assert "Boarding" in text
 
     def test_train2_departed_missed_shows_x(self):
-        arr = ts_ms(FIXED_NOW + timedelta(minutes=30))
-        dep = ts_ms(FIXED_NOW - timedelta(minutes=10))
+        arr = to_iso(FIXED_NOW + timedelta(minutes=30))
+        dep = to_iso(FIXED_NOW - timedelta(minutes=10))
         train1, train2 = self._make_connection_trains(arr, dep, train1_status="Enroute", train2_status="Departed")
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
@@ -2057,8 +2034,8 @@ class TestBuildConnectionPanel:
         assert "✗" in text
 
     def test_panel_title_has_station(self):
-        arr = ts_ms(FIXED_NOW)
-        dep = ts_ms(FIXED_NOW + timedelta(minutes=60))
+        arr = to_iso(FIXED_NOW)
+        dep = to_iso(FIXED_NOW + timedelta(minutes=60))
         train1, train2 = self._make_connection_trains(arr, dep)
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
@@ -2128,13 +2105,13 @@ class TestBuildHeaderEdgeCases:
 
     def test_eta_exact_on_schedule_no_diff(self):
         """When arr == schArr, no +/- diff should appear and no '(sched)' label."""
-        same_time = ts_ms(FIXED_NOW + timedelta(hours=1))
+        same_time = to_iso(FIXED_NOW + timedelta(hours=1))
         train = make_train(
             train_state="Active", status_msg="On Time",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=2)),
-                             dep=ts_ms(FIXED_NOW - timedelta(hours=2))),
+                             sch_dep=to_iso(FIXED_NOW - timedelta(hours=2)),
+                             dep=to_iso(FIXED_NOW - timedelta(hours=2))),
                 make_station(code="PHL", name="Philadelphia", status="Enroute",
                              sch_arr=same_time, arr=same_time),
             ],
@@ -2151,10 +2128,10 @@ class TestBuildHeaderEdgeCases:
             train_state="Active", status_msg="On Time",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=2)),
-                             dep=ts_ms(FIXED_NOW - timedelta(hours=2))),
+                             sch_dep=to_iso(FIXED_NOW - timedelta(hours=2)),
+                             dep=to_iso(FIXED_NOW - timedelta(hours=2))),
                 make_station(code="GBG", name="Greensburg", status="Enroute",
-                             sch_dep=ts_ms(FIXED_NOW + timedelta(hours=1))),
+                             sch_dep=to_iso(FIXED_NOW + timedelta(hours=1))),
             ],
         )
         text = render_to_text(tracker.build_header(train))
@@ -2167,11 +2144,11 @@ class TestBuildHeaderEdgeCases:
             train_state="Active", status_msg="",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(FIXED_NOW - timedelta(hours=2)),
-                             dep=ts_ms(FIXED_NOW - timedelta(hours=2))),
+                             sch_dep=to_iso(FIXED_NOW - timedelta(hours=2)),
+                             dep=to_iso(FIXED_NOW - timedelta(hours=2))),
                 make_station(code="PHL", name="Philadelphia", status="Enroute",
-                             sch_arr=ts_ms(FIXED_NOW + timedelta(hours=1)),
-                             arr=ts_ms(FIXED_NOW + timedelta(hours=1))),
+                             sch_arr=to_iso(FIXED_NOW + timedelta(hours=1)),
+                             arr=to_iso(FIXED_NOW + timedelta(hours=1))),
             ],
         )
         text = render_to_text(tracker.build_header(train))
@@ -2235,15 +2212,15 @@ class TestMainLiveRefreshLoop:
             train_num="42",
             stations=[
                 make_station(code="PHL", name="Philadelphia", status="Enroute",
-                             sch_arr=ts_ms(FIXED_NOW + timedelta(hours=1)),
-                             arr=ts_ms(FIXED_NOW + timedelta(hours=1))),
+                             sch_arr=to_iso(FIXED_NOW + timedelta(hours=1)),
+                             arr=to_iso(FIXED_NOW + timedelta(hours=1))),
             ],
         )
         train2 = make_train(
             train_num="178",
             stations=[
                 make_station(code="PHL", name="Philadelphia", status="",
-                             sch_dep=ts_ms(FIXED_NOW + timedelta(hours=2))),
+                             sch_dep=to_iso(FIXED_NOW + timedelta(hours=2))),
             ],
         )
         mock_fetch.side_effect = [train1, train2]
@@ -2276,8 +2253,8 @@ class TestMainMultiTrainOrchestration:
         """Build a train with stations at the given codes."""
         stations = [
             make_station(code=code, name=f"Station {code}", status="Enroute" if i == 0 else "",
-                         sch_arr=ts_ms(FIXED_NOW + timedelta(hours=i)),
-                         sch_dep=ts_ms(FIXED_NOW + timedelta(hours=i, minutes=5)))
+                         sch_arr=to_iso(FIXED_NOW + timedelta(hours=i)),
+                         sch_dep=to_iso(FIXED_NOW + timedelta(hours=i, minutes=5)))
             for i, code in enumerate(station_codes)
         ]
         return make_train(train_num=train_num, route_name=route_name, stations=stations)
