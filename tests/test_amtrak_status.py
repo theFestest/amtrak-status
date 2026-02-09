@@ -754,18 +754,18 @@ class TestInitializeNotificationState:
             make_station(code="D", status="", sch_arr="2025-03-15T15:00:00"),
         ])
         tracker.initialize_notification_state(train)
-        assert "A" in tracker._notified_stations
-        assert "B" in tracker._notified_stations
-        assert "C" not in tracker._notified_stations
-        assert "D" not in tracker._notified_stations
-        assert tracker._notifications_initialized is True
+        assert "A" in tracker._notify_state.notified
+        assert "B" in tracker._notify_state.notified
+        assert "C" not in tracker._notify_state.notified
+        assert "D" not in tracker._notify_state.notified
+        assert tracker._notify_state.initialized is True
 
     def test_idempotent(self):
         train = make_train(stations=[
             make_station(code="A", status="Departed", sch_dep="2025-03-15T10:00:00"),
         ])
         tracker.initialize_notification_state(train)
-        first = tracker._notified_stations.copy()
+        first = tracker._notify_state.notified.copy()
 
         # Call again with different data — should not change anything
         train2 = make_train(stations=[
@@ -773,7 +773,7 @@ class TestInitializeNotificationState:
             make_station(code="B", status="Departed", sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00"),
         ])
         tracker.initialize_notification_state(train2)
-        assert tracker._notified_stations == first
+        assert tracker._notify_state.notified == first
 
 
 # =============================================================================
@@ -789,10 +789,10 @@ class TestCheckAndNotify:
         result = tracker.check_and_notify(train)
         assert result == []
 
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_notifies_on_new_arrival(self, mock_notify):
         """Simulate: init with PHL as Enroute, then it becomes Station → notify."""
-        tracker.NOTIFY_STATIONS = {"PHL"}
+        tracker._notify_state.stations = {"PHL"}
 
         # Step 1: Initialize with PHL still en route
         train_before = make_train(stations=[
@@ -811,10 +811,10 @@ class TestCheckAndNotify:
         assert "PHL" in result
         assert mock_notify.called
 
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_does_not_renotify(self, mock_notify):
         """After notifying once, subsequent calls should not re-notify."""
-        tracker.NOTIFY_STATIONS = {"PHL"}
+        tracker._notify_state.stations = {"PHL"}
 
         # Init with PHL enroute
         train_before = make_train(stations=[
@@ -836,10 +836,10 @@ class TestCheckAndNotify:
         assert result == []
         assert not mock_notify.called
 
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_notify_all(self, mock_notify):
         """With NOTIFY_ALL, new arrivals should trigger notifications."""
-        tracker.NOTIFY_ALL = True
+        tracker._notify_state.notify_all = True
 
         # Init with HBG enroute
         train_before = make_train(stations=[
@@ -859,9 +859,9 @@ class TestCheckAndNotify:
         result = tracker.check_and_notify(train_after)
         assert "HBG" in result
 
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_does_not_notify_for_unspecified_station(self, mock_notify):
-        tracker.NOTIFY_STATIONS = {"NYP"}
+        tracker._notify_state.stations = {"NYP"}
         train = make_train(stations=[
             make_station(code="PGH", status="Departed", sch_dep="2025-03-15T10:00:00"),
             make_station(code="PHL", status="Station", sch_arr="2025-03-15T11:00:00", arr="2025-03-15T12:00:00"),
@@ -876,8 +876,8 @@ class TestCheckAndNotify:
 
 
 class TestSendNotification:
-    @patch("amtrak_status.tracker.sys")
-    @patch("amtrak_status.tracker.subprocess.run")
+    @patch("amtrak_status.notifications.sys")
+    @patch("amtrak_status.notifications.subprocess.run")
     def test_macos(self, mock_run, mock_sys):
         mock_sys.platform = "darwin"
         result = tracker.send_notification("Title", "Message")
@@ -886,8 +886,8 @@ class TestSendNotification:
         args = mock_run.call_args
         assert "osascript" in args[0][0]
 
-    @patch("amtrak_status.tracker.sys")
-    @patch("amtrak_status.tracker.subprocess.run")
+    @patch("amtrak_status.notifications.sys")
+    @patch("amtrak_status.notifications.subprocess.run")
     def test_linux(self, mock_run, mock_sys):
         mock_sys.platform = "linux"
         result = tracker.send_notification("Title", "Message")
@@ -896,8 +896,8 @@ class TestSendNotification:
         args = mock_run.call_args
         assert "notify-send" in args[0][0]
 
-    @patch("amtrak_status.tracker.sys")
-    @patch("amtrak_status.tracker.subprocess.run", side_effect=FileNotFoundError)
+    @patch("amtrak_status.notifications.sys")
+    @patch("amtrak_status.notifications.subprocess.run", side_effect=FileNotFoundError)
     def test_fallback_to_bell(self, mock_run, mock_sys):
         mock_sys.platform = "darwin"
         result = tracker.send_notification("Title", "Message")
@@ -910,7 +910,7 @@ class TestSendNotification:
 
 
 class TestFetchTrainData:
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_success_direct_key(self, mock_client_cls):
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -926,7 +926,7 @@ class TestFetchTrainData:
         assert result is not None
         assert result["trainNum"] == "42"
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_success_single_key_response(self, mock_client_cls):
         """API sometimes returns a single key that doesn't match the query."""
         mock_response = MagicMock()
@@ -942,8 +942,8 @@ class TestFetchTrainData:
         result = tracker.fetch_train_data("42")
         assert result is not None
 
-    @patch("amtrak_status.tracker.sleep")
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.sleep")
+    @patch("amtrak_status.api.httpx.Client")
     def test_retry_on_http_error(self, mock_client_cls, mock_sleep):
         """Should retry up to MAX_RETRIES times on HTTP errors."""
         mock_client = MagicMock()
@@ -960,7 +960,7 @@ class TestFetchTrainData:
         assert "error" in result
         assert mock_client.get.call_count == tracker.MAX_RETRIES
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_not_found_returns_none(self, mock_client_cls):
         """Empty API response → None."""
         mock_response = MagicMock()
@@ -974,12 +974,12 @@ class TestFetchTrainData:
         result = tracker.fetch_train_data("999")
         assert result is None
 
-    @patch("amtrak_status.tracker.sleep")
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.sleep")
+    @patch("amtrak_status.api.httpx.Client")
     def test_cache_fallback_on_failure(self, mock_client_cls, mock_sleep):
         """Should use cached data when API fails and cache is fresh."""
         cached_data = {"trainNum": "42", "stations": []}
-        tracker._train_caches["42"] = {
+        tracker._cache.per_train["42"] = {
             "data": cached_data,
             "fetch_time": FIXED_NOW,
             "error": None,
@@ -1018,7 +1018,7 @@ def httpx_http_error():
 
 
 class TestFetchStationSchedule:
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_success(self, mock_client_cls):
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -1034,7 +1034,7 @@ class TestFetchStationSchedule:
         assert result is not None
         assert "PHL" in result
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_error(self, mock_client_cls):
         import httpx
 
@@ -1355,7 +1355,7 @@ class TestMainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "--notify-at", "PGH,NYP", "--once"]):
             tracker.main()
 
-        assert tracker.NOTIFY_STATIONS == {"PGH", "NYP"}
+        assert tracker._notify_state.stations == {"PGH", "NYP"}
 
     @patch("amtrak_status.tracker.Live")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -1368,7 +1368,7 @@ class TestMainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "--notify-all", "--once"]):
             tracker.main()
 
-        assert tracker.NOTIFY_ALL is True
+        assert tracker._notify_state.notify_all is True
 
     @patch("amtrak_status.tracker.Live")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -1448,12 +1448,12 @@ class TestTimezoneEdgeCases:
 
 
 class TestCacheExpiry:
-    @patch("amtrak_status.tracker.sleep")
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.sleep")
+    @patch("amtrak_status.api.httpx.Client")
     def test_stale_cache_not_used(self, mock_client_cls, mock_sleep):
         """Cache older than 300 seconds should NOT be used as fallback."""
         cached_data = {"trainNum": "42", "stations": []}
-        tracker._train_caches["42"] = {
+        tracker._cache.per_train["42"] = {
             "data": cached_data,
             "fetch_time": FIXED_NOW - timedelta(seconds=301),
             "error": None,
@@ -1476,7 +1476,7 @@ class TestFetchTrainDataCachedErrorPath:
     def test_cached_returns_cache_on_error_result(self, mock_fetch):
         """When fetch returns an error dict but cache is fresh, use cache."""
         cached = {"trainNum": "42", "stations": [], "routeName": "Pennsylvanian"}
-        tracker._train_caches["42"] = {
+        tracker._cache.per_train["42"] = {
             "data": cached,
             "fetch_time": FIXED_NOW,
             "error": None,
@@ -2285,10 +2285,10 @@ class TestMainMultiTrainOrchestration:
 
         mock_fetch_station.assert_called_with("PHL")
         # Caches should be populated with predeparture data
-        assert "42" in tracker._train_caches
-        assert tracker._train_caches["42"]["data"]["_predeparture"] is True
-        assert "178" in tracker._train_caches
-        assert tracker._train_caches["178"]["data"]["_predeparture"] is True
+        assert "42" in tracker._cache.per_train
+        assert tracker._cache.per_train["42"]["data"]["_predeparture"] is True
+        assert "178" in tracker._cache.per_train
+        assert tracker._cache.per_train["178"]["data"]["_predeparture"] is True
 
     @patch("amtrak_status.tracker.Console")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -2318,8 +2318,8 @@ class TestMainMultiTrainOrchestration:
             tracker.main()
 
         mock_fetch_station.assert_called_with("PHL")
-        assert "178" in tracker._train_caches
-        assert tracker._train_caches["178"]["data"]["_predeparture"] is True
+        assert "178" in tracker._cache.per_train
+        assert tracker._cache.per_train["178"]["data"]["_predeparture"] is True
 
     @patch("amtrak_status.tracker.Console")
     @patch("amtrak_status.tracker.fetch_train_data")

@@ -36,7 +36,7 @@ from conftest import (
 def missing_fields_train():
     """Load train_missing_fields.json and return the parsed train dict."""
     fixture = load_fixture("train_missing_fields.json")
-    with patch("amtrak_status.tracker.httpx.Client") as mock_cls:
+    with patch("amtrak_status.api.httpx.Client") as mock_cls:
         mock_cls.return_value = make_mock_httpx_client(fixture)
         result = tracker.fetch_train_data("42")
         assert result is not None
@@ -47,7 +47,7 @@ def missing_fields_train():
 def cancelled_stops_train():
     """Load train_cancelled_stops.json and return the parsed train dict."""
     fixture = load_fixture("train_cancelled_stops.json")
-    with patch("amtrak_status.tracker.httpx.Client") as mock_cls:
+    with patch("amtrak_status.api.httpx.Client") as mock_cls:
         mock_cls.return_value = make_mock_httpx_client(fixture)
         result = tracker.fetch_train_data("42")
         assert result is not None
@@ -62,7 +62,7 @@ def cancelled_stops_train():
 class TestFixtureTrainParsing:
     """Feed fixtures through fetch_train_data via mocked httpx."""
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_midjourney_returns_train_data(self, mock_client_cls):
         fixture = load_fixture("train_active_midjourney.json")
         mock_client_cls.return_value = make_mock_httpx_client(fixture)
@@ -73,7 +73,7 @@ class TestFixtureTrainParsing:
         assert result["routeName"] == "Pennsylvanian"
         assert len(result["stations"]) == 10
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_midjourney_preserves_all_api_fields(self, mock_client_cls):
         fixture = load_fixture("train_active_midjourney.json")
         mock_client_cls.return_value = make_mock_httpx_client(fixture)
@@ -88,7 +88,7 @@ class TestFixtureTrainParsing:
         assert result["trainNumRaw"] == "42"
         assert result["onlyOfTrainNum"] is True
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_midjourney_stations_have_all_fields(self, mock_client_cls):
         fixture = load_fixture("train_active_midjourney.json")
         mock_client_cls.return_value = make_mock_httpx_client(fixture)
@@ -102,7 +102,7 @@ class TestFixtureTrainParsing:
         assert station["depCmnt"] == ""
         assert station["stopIconColor"] == "#2a893d"
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_multi_day_returns_first_entry(self, mock_client_cls):
         """API returns multiple entries for same train number across days.
 
@@ -124,7 +124,7 @@ class TestFixtureTrainParsing:
         assert fixture["42"][1]["trainID"] == "42-7"  # yesterday's completed train
         assert fixture["42"][1]["trainState"] == "Completed"
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_predeparture_returns_data(self, mock_client_cls):
         fixture = load_fixture("train_predeparture.json")
         mock_client_cls.return_value = make_mock_httpx_client(fixture)
@@ -149,7 +149,7 @@ class TestFixtureISOTimestamps:
         assert dt.hour == 14
         assert dt.minute == 30
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_iso_timestamps_display_as_ampm(self, mock_client_cls):
         fixture = load_fixture("train_active_midjourney.json")
         mock_client_cls.return_value = make_mock_httpx_client(fixture)
@@ -162,7 +162,7 @@ class TestFixtureISOTimestamps:
         # GBG departed at 8:20 AM
         assert "8:20 AM" in text
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_iso_timestamps_in_header_eta(self, mock_client_cls):
         fixture = load_fixture("train_active_midjourney.json")
         mock_client_cls.return_value = make_mock_httpx_client(fixture)
@@ -174,7 +174,7 @@ class TestFixtureISOTimestamps:
         assert "Huntingdon" in text
         assert "11:20 AM" in text
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_iso_timestamps_in_compact_display(self, mock_client_cls):
         fixture = load_fixture("train_active_midjourney.json")
         mock_client_cls.return_value = make_mock_httpx_client(fixture)
@@ -185,7 +185,7 @@ class TestFixtureISOTimestamps:
         # HUN is the next station with arr = 11:20 AM
         assert "11:20 AM" in text
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_position_calculation_with_iso_times(self, mock_client_cls):
         """calculate_position_between_stations works with aware datetimes from ISO strings."""
         fixture = load_fixture("train_active_midjourney.json")
@@ -274,7 +274,7 @@ class TestFixtureMissingFields:
 class TestFixtureStatusMsg:
     """The single-space statusMsg edge case."""
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_space_statusmsg_used_in_header(self, mock_client_cls):
         """Header renders ' ' as status instead of 'Active'.
 
@@ -295,7 +295,7 @@ class TestFixtureStatusMsg:
         assert "Active" not in text
         assert "Pennsylvanian" in text
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_space_statusmsg_in_compact(self, mock_client_cls):
         """Compact display includes ' ' in output."""
         fixture = load_fixture("train_space_statusmsg.json")
@@ -402,7 +402,7 @@ class TestFixtureNotFoundEdgeCases:
     """The [] not-found response that works by coincidence."""
 
     @pytest.mark.coincidence
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_empty_array_returns_none_via_wrong_code_path(self, mock_client_cls):
         """fetch_train_data returns None for [], but via the wrong logic.
 
@@ -623,7 +623,7 @@ class TestFixtureDelayedISO:
     @pytest.fixture
     def delayed_train(self):
         fixture = load_fixture("train_delayed_iso.json")
-        with patch("amtrak_status.tracker.httpx.Client") as mock_cls:
+        with patch("amtrak_status.api.httpx.Client") as mock_cls:
             mock_cls.return_value = make_mock_httpx_client(fixture)
             result = tracker.fetch_train_data("42")
             assert result is not None
@@ -654,7 +654,7 @@ class TestFixtureCompletedTrain:
     @pytest.fixture
     def completed_train(self):
         fixture = load_fixture("train_completed.json")
-        with patch("amtrak_status.tracker.httpx.Client") as mock_cls:
+        with patch("amtrak_status.api.httpx.Client") as mock_cls:
             mock_cls.return_value = make_mock_httpx_client(fixture)
             result = tracker.fetch_train_data("42")
             assert result is not None
@@ -694,7 +694,7 @@ class TestFixtureCompletedTrain:
 class TestFixtureFocusedDisplay:
     """Focus mode with real fixture data exceeding 10 stations."""
 
-    @patch("amtrak_status.tracker.httpx.Client")
+    @patch("amtrak_status.api.httpx.Client")
     def test_focus_hides_old_departed_with_iso_data(self, mock_client_cls):
         """Midjourney fixture + extra stations triggers focus elision."""
         fixture = load_fixture("train_active_midjourney.json")

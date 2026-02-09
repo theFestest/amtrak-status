@@ -596,9 +596,9 @@ class TestErrorAndRecovery:
     def test_cached_data_with_warning_indicator(self):
         """When API fails but cache is fresh, data still renders and warning appears."""
         train = journey_at_phase("mid")
-        tracker._last_successful_data = train
-        tracker._last_fetch_time = FIXED_NOW
-        tracker._last_error = "Train not in API response (using cached data)"
+        tracker._cache.last_successful_data = train
+        tracker._cache.last_fetch_time = FIXED_NOW
+        tracker._cache.last_error = "Train not in API response (using cached data)"
 
         panel = tracker.build_header(train)
         text = render_to_text(panel)
@@ -625,15 +625,15 @@ class TestErrorAndRecovery:
 class TestNotificationIntegration:
     """Full notification lifecycle: init → progress → notify."""
 
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_full_notification_lifecycle(self, mock_notify):
-        tracker.NOTIFY_STATIONS = {"PHL"}
+        tracker._notify_state.stations = {"PHL"}
 
         # Step 1: Train en route — initialize notification state
         train_enroute = journey_at_phase("mid")
         result1 = tracker.check_and_notify(train_enroute)
         assert result1 == []  # No notifications on init
-        assert tracker._notifications_initialized is True
+        assert tracker._notify_state.initialized is True
 
         # Step 2: Train arrives at PHL — should notify
         train_at_phl = journey_at_phase("arriving")
@@ -649,9 +649,9 @@ class TestNotificationIntegration:
         assert "Philadelphia" in message_arg
         assert "PHL" in message_arg
 
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_notify_all_tracks_each_station(self, mock_notify):
-        tracker.NOTIFY_ALL = True
+        tracker._notify_state.notify_all = True
 
         # Init: PGH+GBG departed, HBG enroute
         train_mid = journey_at_phase("mid")
@@ -667,18 +667,18 @@ class TestNotificationIntegration:
         assert "PHL" in result
         assert mock_notify.call_count == 2
 
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_departed_before_init_not_notified(self, mock_notify):
         """Stations that were already departed when we started should not trigger."""
-        tracker.NOTIFY_ALL = True
+        tracker._notify_state.notify_all = True
 
         # Init at mid journey — PGH and GBG already departed
         train_mid = journey_at_phase("mid")
         tracker.check_and_notify(train_mid)
 
         # PGH and GBG should be in _notified_stations (pre-marked)
-        assert "PGH" in tracker._notified_stations
-        assert "GBG" in tracker._notified_stations
+        assert "PGH" in tracker._notify_state.notified
+        assert "GBG" in tracker._notify_state.notified
 
         # They should not have triggered actual notifications
         # (only pre-existing departures are marked, not new ones)
@@ -695,7 +695,7 @@ class TestNotificationIntegration:
     ):
         """check_and_notify should be called in multi-train --once mode."""
         now = FIXED_NOW
-        tracker.NOTIFY_STATIONS = {"PHL"}
+        tracker._notify_state.stations = {"PHL"}
 
         train1 = make_train(
             train_num="42", route_name="Pennsylvanian",
@@ -721,7 +721,7 @@ class TestNotificationIntegration:
         def fake_fetch(num):
             data = {"42": train1, "178": train2}.get(num)
             if data:
-                tracker._train_caches[num] = {
+                tracker._cache.per_train[num] = {
                     "data": data, "fetch_time": FIXED_NOW, "error": None
                 }
             return data
@@ -1042,10 +1042,10 @@ class TestLayoverBoundary:
 
 
 class TestNotificationObservable:
-    @patch("amtrak_status.tracker.send_notification", return_value=True)
+    @patch("amtrak_status.notifications.send_notification", return_value=True)
     def test_departed_before_init_not_notified(self, mock_notify):
         """Only check observable behavior: no notifications sent for pre-departed stations."""
-        tracker.NOTIFY_ALL = True
+        tracker._notify_state.notify_all = True
 
         # Init at mid journey — PGH and GBG already departed
         train_mid = journey_at_phase("mid")
