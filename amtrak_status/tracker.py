@@ -478,27 +478,14 @@ def build_predeparture_train_data(train_number: str, station_code: str, station_
     return data
 
 
-def parse_time(time_val: str | int | None) -> datetime | None:
-    """Parse time value - handles both ISO strings and Unix timestamps (ms)."""
-    if time_val is None:
+def parse_time(time_val: str | None) -> datetime | None:
+    """Parse an ISO 8601 time string from the API."""
+    if not time_val or not isinstance(time_val, str):
         return None
-    
+
     try:
-        # Handle Unix timestamp in milliseconds (what the API actually returns)
-        if isinstance(time_val, (int, float)):
-            return datetime.fromtimestamp(time_val / 1000)
-        
-        # Handle string that looks like a number
-        if isinstance(time_val, str) and time_val.isdigit():
-            return datetime.fromtimestamp(int(time_val) / 1000)
-        
-        # Handle ISO format strings
-        if isinstance(time_val, str):
-            time_val = time_val.replace("Z", "+00:00")
-            return datetime.fromisoformat(time_val)
-        
-        return None
-    except (ValueError, TypeError, OSError):
+        return datetime.fromisoformat(time_val.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
         return None
 
 
