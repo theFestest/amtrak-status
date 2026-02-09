@@ -9,6 +9,8 @@ from rich.text import Text
 from rich.layout import Layout
 
 import amtrak_status.tracker as tracker
+import amtrak_status.models as models
+import amtrak_status.connection as connection
 
 # Shared helpers from conftest (imported explicitly for use in test code)
 from conftest import (
@@ -604,32 +606,27 @@ class TestCalculateLayover:
         assert result["layover_status"] == "missed"
         assert result["is_valid"] is False
 
-    def test_tight_layover_30_to_44(self):
-        """Layover 30-44 min should be 'tight'."""
+    def test_risky_layover_30_to_44(self):
+        """Layover 30-44 min should be 'risky' (below LAYOVER_TIGHT threshold)."""
         now = datetime.now()
         arr = to_iso(now)
         dep = to_iso(now + timedelta(minutes=35))
         train1, train2 = self._make_trains(arr, dep)
 
-        result = tracker.calculate_layover(train1, train2, "PHL")
+        result = connection.calculate_layover(train1, train2, "PHL")
         assert result["layover_minutes"] == 35
-        assert result["layover_status"] == "tight"
+        assert result["layover_status"] == "risky"
 
-    @pytest.mark.xfail(
-        reason="BUG: 45-59 min layover returns 'tight' instead of a distinct status. "
-               "Lines 858-859 duplicate the 'tight' branch for the LAYOVER_TIGHT..LAYOVER_COMFORTABLE range."
-    )
-    def test_layover_45_to_59_should_not_be_tight(self):
-        """Layover 45-59 min should be distinct from 30-44 min (currently both 'tight')."""
+    def test_tight_layover_45_to_59(self):
+        """Layover 45-59 min should be 'tight' (>= LAYOVER_TIGHT, < LAYOVER_COMFORTABLE)."""
         now = datetime.now()
         arr = to_iso(now)
         dep = to_iso(now + timedelta(minutes=50))
         train1, train2 = self._make_trains(arr, dep)
 
-        result = tracker.calculate_layover(train1, train2, "PHL")
+        result = connection.calculate_layover(train1, train2, "PHL")
         assert result["layover_minutes"] == 50
-        # This SHOULD be "comfortable" or a middle category, not "tight"
-        assert result["layover_status"] != "tight"
+        assert result["layover_status"] == "tight"
 
     def test_train2_already_departed_is_missed(self):
         """If train2 departed and train1 hasn't arrived, connection is missed."""
@@ -1953,11 +1950,11 @@ class TestBuildConnectionPanel:
 
     def test_tight_layover_rendering(self):
         arr = to_iso(FIXED_NOW)
-        dep = to_iso(FIXED_NOW + timedelta(minutes=35))
+        dep = to_iso(FIXED_NOW + timedelta(minutes=50))
         train1, train2 = self._make_connection_trains(arr, dep)
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
-        assert "35 min layover" in text
+        assert "50 min layover" in text
         assert "tight" in text
         assert "⚡" in text
 

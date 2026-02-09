@@ -9,6 +9,8 @@ import pytest
 from rich.console import Console
 
 import amtrak_status.tracker as tracker
+import amtrak_status.models as models
+import amtrak_status.connection as connection
 
 
 # =============================================================================
@@ -47,9 +49,10 @@ def reset_globals():
 
 @pytest.fixture(autouse=True)
 def freeze_time():
-    """Patch tracker._now to return FIXED_NOW for deterministic tests."""
-    with patch("amtrak_status.tracker._now", return_value=FIXED_NOW):
-        yield
+    """Patch _now to return FIXED_NOW for deterministic tests."""
+    with patch("amtrak_status.models._now", return_value=FIXED_NOW):
+        with patch("amtrak_status.tracker._now", return_value=FIXED_NOW):
+            yield
 
 
 # =============================================================================

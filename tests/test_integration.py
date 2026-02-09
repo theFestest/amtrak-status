@@ -6,6 +6,8 @@ from unittest.mock import patch, MagicMock
 from rich.text import Text
 
 import amtrak_status.tracker as tracker
+import amtrak_status.models as models
+import amtrak_status.connection as connection
 
 # Shared helpers from conftest (imported explicitly for use in test code)
 from conftest import (
@@ -339,11 +341,11 @@ class TestRenderedConnectionPanel:
         assert "1h 30m layover" in text
 
     def test_tight_layover_text(self):
-        train1, train2 = self._make_connection_trains(35)
+        train1, train2 = self._make_connection_trains(50)
         panel = tracker.build_connection_panel(train1, train2, "PHL")
         text = render_to_text(panel)
 
-        assert "35 min layover" in text
+        assert "50 min layover" in text
         assert "tight" in text
 
     def test_risky_layover_text(self):

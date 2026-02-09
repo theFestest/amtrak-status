@@ -18,6 +18,8 @@ from rich.panel import Panel
 from rich.text import Text
 
 import amtrak_status.tracker as tracker
+import amtrak_status.models as models
+import amtrak_status.connection as connection
 from conftest import (
     load_fixture,
     make_mock_httpx_client,
