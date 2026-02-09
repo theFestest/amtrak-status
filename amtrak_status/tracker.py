@@ -27,7 +27,6 @@ from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, TextColumn
 from rich.table import Table
 from rich.text import Text
 from rich.prompt import Prompt
@@ -59,6 +58,19 @@ from .notifications import (
     send_notification,
     initialize_notification_state as _notify_initialize,
     check_and_notify as _notify_check_and_notify,
+)
+from .display import (
+    build_header as _display_build_header,
+    build_compact_train_header as _display_build_compact_train_header,
+    apply_main_title as _display_apply_main_title,
+    build_stations_table as _display_build_stations_table,
+    build_progress_bar,
+    build_compact_display as _display_build_compact_display,
+    build_connection_panel,
+    build_error_panel,
+    build_not_found_panel,
+    build_predeparture_panel,
+    build_predeparture_header,
 )
 
 REFRESH_INTERVAL = _DEFAULT_REFRESH_INTERVAL
@@ -98,443 +110,46 @@ def check_and_notify(train: dict) -> list[str]:
     return _notify_check_and_notify(train, _notify_state)
 
 
-
-
+# Display wrapper functions that pass module-level state
 def build_header(train: dict) -> Panel:
     """Build the header panel with train info."""
-    route_name = train.get("routeName", "Unknown Route")
-    train_num = train.get("trainNum", "?")
-    train_id = train.get("trainID", "")
-    heading = train.get("heading", "")
-    velocity = train.get("velocity", 0)
-    train_state = train.get("trainState", "")
-    status_msg = train.get("statusMsg", "")
-    
-    # Get current status
-    stations = train.get("stations", [])
-    completed, current_idx, total = calculate_progress(stations)
-    
-    # Find next station (first non-departed, non-cancelled station)
-    next_station = "—"
-    eta = "—"
-    for station in stations:
-        # Skip cancelled stops (no scheduled times)
-        if is_station_cancelled(station):
-            continue
-        if station.get("status") in ("Enroute", "Station", ""):
-            next_station = station.get("name", station.get("code", "?"))
-            # arr field contains estimated arrival for future stations
-            est_arr = parse_time(station.get("arr"))
-            sch_arr = parse_time(station.get("schArr"))
-            if est_arr:
-                eta = format_time(est_arr)
-                # Show difference from scheduled if we have both
-                if sch_arr and est_arr != sch_arr:
-                    diff_mins = (est_arr - sch_arr).total_seconds() / 60
-                    if diff_mins > 0:
-                        eta += f" [red](+{diff_mins:.0f}m)[/]"
-                    elif diff_mins < 0:
-                        eta += f" [green]({diff_mins:.0f}m)[/]"
-            elif sch_arr:
-                eta = f"{format_time(sch_arr)} [dim](sched)[/]"
-            break
-    
-    # Get destination
-    dest_name = train.get("destName", "")
-    
-    # Build status display
-    if status_msg:
-        display_status = status_msg
-    elif train_state == "Predeparture":
-        display_status = "Predeparture"
-    else:
-        display_status = "Active"
-    
-    # Status color
-    if "early" in display_status.lower() or "on time" in display_status.lower():
-        status_style = "green"
-    elif "late" in display_status.lower() or "delay" in display_status.lower():
-        status_style = "red"
-    else:
-        status_style = "white"
-    
-    header = Table.grid(padding=(0, 2))
-    header.add_column(justify="left", style="bold white")
-    header.add_column(justify="left")
-    
-    header.add_row(
-        Text.from_markup(f"🚂 {route_name} [dim]#{train_num} ({train_id})[/]"),
-        ""
-    )
-    header.add_row(
-        Text.from_markup(f"Next: {next_station} [dim]@ {eta}[/]"),
-        ""
-    )
-    speed_str = f"{velocity:.0f} mph" if velocity else "—"
-    header.add_row(
-        f"Heading: {heading or '—'} @ {speed_str}",
-        Text(display_status, style=status_style)
-    )
-    
-    # Add position progress bar between stations
-    position = calculate_position_between_stations(train)
-    if position and train_state != "Predeparture":
-        last_code, next_code, progress_frac, mins_remaining = position
-        
-        # Build a mini progress bar: Position: LAST ▓▓▓▓▓▓░░░░ NEXT (XX min)
-        bar_width = 20
-        filled = int(progress_frac * bar_width)
-        empty = bar_width - filled
-        
-        bar = f"[green]{'█' * filled}[/][dim]{'░' * empty}[/]"
-        if mins_remaining > 0:
-            time_str = f"({mins_remaining} min)" if mins_remaining != 1 else "(1 min)"
-        else:
-            time_str = "(arriving)"
-        
-        position_text = Text.from_markup(f"Position: {last_code} {bar} {next_code} [dim]{time_str}[/]")
-        header.add_row(position_text, "")
-    
-    if dest_name:
-        header.add_row(
-            f"Destination: {dest_name}",
-            ""
-        )
-    
-    # Build subtitle with status indicator - show last SUCCESSFUL update time
-    if _cache.last_fetch_time:
-        update_str = f"Updated: {_cache.last_fetch_time.strftime('%H:%M:%S')}"
-    else:
-        update_str = "Updated: —"
-    
-    status_parts = [update_str]
-    if _cache.last_error:
-        status_parts.append(f"[yellow]⚠ {_cache.last_error}[/]")
-    status_parts.append(f"Refresh: {REFRESH_INTERVAL}s")
-    status_parts.append("Press Ctrl+C to quit")
-    subtitle = " | ".join(status_parts)
-    
-    return Panel(
-        header,
-        title=f"[bold cyan]Amtrak Status[/]",
-        subtitle=f"[dim]{subtitle}[/]",
-        border_style="cyan"
-    )
-
-
-def build_progress_bar(train: dict) -> Panel:
-    """Build a visual progress bar for the journey."""
-    stations = train.get("stations", [])
-    completed, current_idx, total = calculate_progress(stations)
-    
-    if total == 0:
-        return Panel("No station data", title="Progress")
-    
-    # Get origin and destination
-    origin = stations[0].get("name", stations[0].get("code", "?")) if stations else "?"
-    dest = stations[-1].get("name", stations[-1].get("code", "?")) if stations else "?"
-    
-    progress = Progress(
-        TextColumn("[bold blue]{task.fields[origin]}"),
-        BarColumn(bar_width=40, complete_style="green", finished_style="green"),
-        TextColumn("[bold blue]{task.fields[dest]}"),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-    )
-    
-    task = progress.add_task(
-        "journey",
-        total=total,
-        completed=completed,
-        origin=origin[:15],
-        dest=dest[:15]
-    )
-    
-    return Panel(progress, title="[bold]Journey Progress[/]", border_style="blue")
-
-
-
-
-def build_connection_panel(train1: dict, train2: dict, connection_station: str) -> Panel:
-    """Build a panel showing connection status between two trains."""
-    layover = calculate_layover(train1, train2, connection_station)
-    
-    train1_name = train1.get("routeName", "Train 1")
-    train1_num = train1.get("trainNum", "?")
-    train2_name = train2.get("routeName", "Train 2")
-    train2_num = train2.get("trainNum", "?")
-    
-    # Build content
-    content = Table.grid(padding=(0, 2))
-    content.add_column(justify="right", style="dim")
-    content.add_column(justify="left")
-    content.add_column(justify="left")
-    
-    # Train 1 arrival
-    arr_time = format_time(layover["train1_arrives"]) if layover["train1_arrives"] else "—"
-    if layover["train1_status"] == "Departed":
-        arr_style = "green"
-        arr_label = "✓ Arrived"
-    elif layover["train1_status"] == "Station":
-        arr_style = "cyan bold"
-        arr_label = "● At station"
-    else:
-        arr_style = "yellow"
-        arr_label = "◯ Expected"
-    
-    content.add_row(
-        f"{train1_name} #{train1_num}",
-        Text(f"Arrives: {arr_time}", style=arr_style),
-        Text(arr_label, style=arr_style)
-    )
-    
-    # Layover indicator
-    if layover["layover_minutes"] is not None:
-        mins = layover["layover_minutes"]
-        status = layover["layover_status"]
-        
-        if status == "missed":
-            layover_style = "red bold"
-            layover_icon = "✗"
-            layover_text = f"MISSED by {abs(mins)} min"
-        elif status == "risky":
-            layover_style = "red"
-            layover_icon = "⚠"
-            layover_text = f"{mins} min layover (risky!)"
-        elif status == "tight":
-            layover_style = "yellow"
-            layover_icon = "⚡"
-            layover_text = f"{mins} min layover (tight)"
-        else:
-            layover_style = "green"
-            layover_icon = "✓"
-            hours = mins // 60
-            remaining_mins = mins % 60
-            if hours > 0:
-                layover_text = f"{hours}h {remaining_mins}m layover"
-            else:
-                layover_text = f"{mins} min layover"
-        
-        content.add_row(
-            "",
-            Text(f"{layover_icon} {layover_text}", style=layover_style),
-            ""
-        )
-    else:
-        content.add_row("", Text("— Layover unknown", style="dim"), "")
-    
-    # Train 2 departure
-    dep_time = format_time(layover["train2_departs"]) if layover["train2_departs"] else "—"
-    if layover["train2_status"] == "Departed":
-        dep_style = "red" if not layover["is_valid"] else "green"
-        dep_label = "✗ Departed" if not layover["is_valid"] else "✓ Departed"
-    elif layover["train2_status"] == "Station":
-        dep_style = "cyan bold"
-        dep_label = "● Boarding"
-    else:
-        dep_style = "dim"
-        dep_label = "◯ Scheduled"
-    
-    content.add_row(
-        f"{train2_name} #{train2_num}",
-        Text(f"Departs: {dep_time}", style=dep_style),
-        Text(dep_label, style=dep_style)
-    )
-    
-    # Panel styling based on connection status
-    if layover["layover_status"] == "missed":
-        border_style = "red"
-        title_style = "bold red"
-    elif layover["layover_status"] == "risky":
-        border_style = "red"
-        title_style = "bold yellow"
-    elif layover["layover_status"] == "tight":
-        border_style = "yellow"
-        title_style = "bold yellow"
-    else:
-        border_style = "green"
-        title_style = "bold green"
-    
-    return Panel(
-        content,
-        title=f"[{title_style}]🔗 Connection at {layover['station_name']} ({layover['station_code']})[/]",
-        border_style=border_style
+    return _display_build_header(
+        train,
+        last_fetch_time=_cache.last_fetch_time,
+        last_error=_cache.last_error,
+        refresh_interval=REFRESH_INTERVAL,
     )
 
 
 def build_compact_train_header(train: dict) -> Panel:
     """Build a more compact header for multi-train view."""
-    route_name = train.get("routeName", "Unknown Route")
-    train_num = train.get("trainNum", "?")
-    train_id = train.get("trainID", "")
-    velocity = train.get("velocity", 0)
-    status_msg = train.get("statusMsg", "")
-    train_state = train.get("trainState", "")
-    is_predeparture_synthetic = train.get("_predeparture", False)
-    
-    stations = train.get("stations", [])
-    
-    # Handle predeparture synthetic data specially
-    if is_predeparture_synthetic:
-        header = Table.grid(padding=(0, 2))
-        header.add_column(justify="left")
-        header.add_column(justify="left")
-        
-        header.add_row(
-            Text(f"🚂 Train #{train_num}", style="bold"),
-            Text("⏳ Predeparture", style="yellow")
-        )
-        
-        # Show scheduled time at connection if available
-        if stations:
-            station = stations[0]
-            sch_dep = parse_time(station.get("schDep"))
-            sch_arr = parse_time(station.get("schArr"))
-            station_code = station.get("code", "")
-            
-            if sch_dep:
-                header.add_row(
-                    Text.from_markup(f"Departs {station_code}: [cyan]{format_time(sch_dep)}[/] [dim](scheduled)[/]"),
-                    ""
-                )
-            elif sch_arr:
-                header.add_row(
-                    Text.from_markup(f"Arrives {station_code}: [cyan]{format_time(sch_arr)}[/] [dim](scheduled)[/]"),
-                    ""
-                )
-        
-        header.add_row(
-            Text("Live tracking begins at departure", style="dim"),
-            ""
-        )
-        
-        return Panel(header, border_style="yellow")
-    
-    # Normal active train header
-    # Find next station (first non-departed, non-cancelled station)
-    next_station = "—"
-    eta = "—"
-    for station in stations:
-        if is_station_cancelled(station):
-            continue
-        if station.get("status") in ("Enroute", "Station", ""):
-            next_station = station.get("name", station.get("code", "?"))
-            est_arr = parse_time(station.get("arr"))
-            sch_arr = parse_time(station.get("schArr"))
-            if est_arr:
-                eta = format_time(est_arr)
-                if sch_arr and est_arr != sch_arr:
-                    diff_mins = (est_arr - sch_arr).total_seconds() / 60
-                    if diff_mins > 0:
-                        eta += f" [red](+{diff_mins:.0f}m)[/]"
-                    elif diff_mins < 0:
-                        eta += f" [green]({diff_mins:.0f}m)[/]"
-            elif sch_arr:
-                eta = f"{format_time(sch_arr)} [dim](sched)[/]"
-            break
-    
-    # Status display
-    if status_msg:
-        display_status = status_msg
-    elif train_state == "Predeparture":
-        display_status = "Predeparture"
-    else:
-        display_status = "Active"
-    
-    if "early" in display_status.lower() or "on time" in display_status.lower():
-        status_style = "green"
-    elif "late" in display_status.lower() or "delay" in display_status.lower():
-        status_style = "red"
-    elif train_state == "Predeparture":
-        status_style = "yellow"
-    else:
-        status_style = "white"
-    
-    # Build compact header
-    header = Table.grid(padding=(0, 2))
-    header.add_column(justify="left")
-    header.add_column(justify="left")
-    
-    speed_str = f"{velocity:.0f} mph" if velocity else "—"
-    
-    header.add_row(
-        Text.from_markup(f"🚂 {route_name} [dim]#{train_num}[/]"),
-        Text(display_status, style=status_style)
-    )
-    header.add_row(
-        Text.from_markup(f"Next: {next_station} [dim]@ {eta}[/]"),
-        Text(f"{speed_str}", style="dim")
-    )
-    
-    # Position bar
-    position = calculate_position_between_stations(train)
-    if position and train_state != "Predeparture":
-        last_code, next_code, progress_frac, mins_remaining = position
-        bar_width = 15
-        filled = int(progress_frac * bar_width)
-        empty = bar_width - filled
-        bar = f"[green]{'█' * filled}[/][dim]{'░' * empty}[/]"
-        if mins_remaining > 0:
-            time_str = f"({mins_remaining}m)"
-        else:
-            time_str = "(arriving)"
-        header.add_row(
-            Text.from_markup(f"{last_code} {bar} {next_code} [dim]{time_str}[/]"),
-            ""
-        )
-    
-    return Panel(header, border_style="cyan")
-
-
-def build_predeparture_panel(train_number: str) -> Panel:
-    """Build a panel for a train that hasn't departed yet."""
-    content = Table.grid(padding=(0, 2))
-    content.add_column(justify="left")
-    
-    content.add_row(Text(f"🚂 Train #{train_number}", style="bold"))
-    content.add_row(Text(""))
-    content.add_row(Text("⏳ Awaiting Departure", style="yellow"))
-    content.add_row(Text(""))
-    content.add_row(Text("Live tracking will begin once", style="dim"))
-    content.add_row(Text("the train departs its origin.", style="dim"))
-    
-    return Panel(
-        content,
-        title=f"[bold yellow]Train #{train_number} - Predeparture[/]",
-        border_style="yellow"
-    )
-
-
-def build_predeparture_header(train_number: str) -> Panel:
-    """Build a compact predeparture header for multi-train view."""
-    content = Table.grid(padding=(0, 2))
-    content.add_column(justify="left")
-    content.add_column(justify="left")
-    
-    content.add_row(
-        Text(f"🚂 Train #{train_number}", style="bold"),
-        Text("⏳ Awaiting Departure", style="yellow")
-    )
-    content.add_row(
-        Text("Live tracking begins at departure", style="dim"),
-        ""
-    )
-    
-    return Panel(content, border_style="yellow")
+    return _display_build_compact_train_header(train)
 
 
 def _apply_main_title(panel: Panel) -> None:
     """Add the main 'Amtrak Status' title and status subtitle to a panel."""
-    panel.title = "[bold cyan]Amtrak Status[/]"
-    status_parts = []
-    if _cache.last_fetch_time:
-        status_parts.append(f"Updated: {_cache.last_fetch_time.strftime('%H:%M:%S')}")
-    else:
-        status_parts.append("Updated: —")
-    if _cache.last_error:
-        status_parts.append(f"[yellow]⚠ {_cache.last_error}[/]")
-    status_parts.append(f"Refresh: {REFRESH_INTERVAL}s")
-    status_parts.append("Press Ctrl+C to quit")
-    panel.subtitle = f"[dim]{' | '.join(status_parts)}[/]"
+    _display_apply_main_title(
+        panel,
+        last_fetch_time=_cache.last_fetch_time,
+        last_error=_cache.last_error,
+        refresh_interval=REFRESH_INTERVAL,
+    )
+
+
+def build_stations_table(train: dict, focus: bool = True) -> Panel:
+    """Build the stations table with optional filtering and focus."""
+    return _display_build_stations_table(
+        train,
+        focus=focus,
+        station_from=STATION_FROM,
+        station_to=STATION_TO,
+        focus_current=FOCUS_CURRENT,
+    )
+
+
+def build_compact_display(train: dict) -> Text:
+    """Build a single-line compact display for the train status."""
+    return _display_build_compact_display(train, last_fetch_time=_cache.last_fetch_time)
 
 
 def build_multi_train_display(train_numbers: list[str], connection_station: str, show_all: bool = False) -> Layout:
@@ -734,261 +349,6 @@ def select_connection_station(console: Console, overlaps: list[str], train1: dic
             return choice.upper()
         
         console.print("[red]Invalid selection. Try again.[/]")
-
-
-def build_stations_table(train: dict, focus: bool = True) -> Panel:
-    """Build the stations table with optional filtering and focus."""
-    all_stations = train.get("stations", [])
-    
-    # Apply station filter if set
-    stations, skipped_before, skipped_after = filter_stations(
-        all_stations, STATION_FROM, STATION_TO
-    )
-    
-    # Find current station index within filtered list for focusing
-    current_idx = find_current_station_index(stations)
-    
-    table = Table(
-        show_header=True,
-        header_style="bold magenta",
-        border_style="dim",
-        expand=True,
-    )
-    
-    table.add_column("", width=2, justify="center")
-    table.add_column("Station", min_width=20)
-    table.add_column("Sch Arr", width=10, justify="center")
-    table.add_column("Sch Dep", width=10, justify="center")
-    table.add_column("Act/Est Arr", width=12, justify="center")
-    table.add_column("Act/Est Dep", width=12, justify="center")
-    table.add_column("Status", width=14, justify="center")
-    
-    # Add "skipped before" indicator
-    if skipped_before > 0:
-        table.add_row(
-            Text("⋮", style="dim"),
-            Text(f"[{skipped_before} earlier stops omitted]", style="dim italic"),
-            "", "", "", "", ""
-        )
-    
-    # Determine which stations to show when focusing
-    # Show: 2 departed stations + current + all future (or all if not focusing)
-    if focus and FOCUS_CURRENT and len(stations) > 10:
-        # Find how many to skip at the start (keep last 2 departed)
-        departed_count = sum(1 for s in stations if s.get("status") == "Departed")
-        skip_departed = max(0, departed_count - 2)
-        
-        if skip_departed > 0:
-            table.add_row(
-                Text("⋮", style="dim"),
-                Text(f"[{skip_departed} departed stops hidden]", style="dim italic"),
-                "", "", "", "", ""
-            )
-            stations = stations[skip_departed:]
-    
-    for station in stations:
-        code = station.get("code", "???")
-        name = station.get("name", code)
-        status_text = station.get("status", "")
-        platform = station.get("platform", "")
-        
-        # Check if this stop is cancelled
-        cancelled = is_station_cancelled(station)
-        
-        if cancelled:
-            # Show cancelled stops with strikethrough-like styling
-            style = "dim strike"
-            icon = "✗"
-            table.add_row(
-                Text(icon, style="red dim"),
-                Text(f"{name} ({code})", style="dim"),
-                "",
-                "",
-                "",
-                "",
-                Text("Cancelled", style="red dim")
-            )
-            continue
-        
-        style, icon = get_status_style(station)
-        
-        # Parse times
-        sch_arr = parse_time(station.get("schArr"))
-        sch_dep = parse_time(station.get("schDep"))
-        arr = parse_time(station.get("arr"))
-        dep = parse_time(station.get("dep"))
-        
-        # Format scheduled times
-        sch_arr_str = format_time(sch_arr) if sch_arr else ""
-        sch_dep_str = format_time(sch_dep) if sch_dep else ""
-        
-        # Format actual/estimated times based on status
-        # For departed stations: arr/dep are ACTUAL times
-        # For future stations: arr/dep are ESTIMATED times
-        is_departed = status_text == "Departed"
-        is_future = status_text in ("", "Enroute")
-        is_current = status_text == "Station"
-        
-        if is_departed:
-            # These are actual times - show in green
-            arr_str = Text(format_time(arr), style="green") if arr else Text("")
-            dep_str = Text(format_time(dep), style="green") if dep else Text("")
-        elif is_current:
-            # At station - arrival is actual, departure is estimated
-            arr_str = Text(format_time(arr), style="green") if arr else Text("")
-            dep_str = Text(format_time(dep), style="yellow") if dep else Text("")
-        elif is_future:
-            # Future - these are estimates
-            arr_str = Text(format_time(arr), style="cyan") if arr else Text("")
-            dep_str = Text(format_time(dep), style="cyan") if dep else Text("")
-        else:
-            arr_str = Text(format_time(arr)) if arr else Text("")
-            dep_str = Text(format_time(dep)) if dep else Text("")
-        
-        # Build display status
-        if platform and status_text in ("Enroute", "Station"):
-            display_status = f"{status_text} (Plt {platform})"
-        else:
-            display_status = status_text or "Scheduled"
-        
-        # Color the status
-        if status_text == "Departed":
-            status_style = "green dim"
-        elif status_text == "Station":
-            status_style = "cyan bold"
-        elif status_text == "Enroute":
-            status_style = "yellow bold"
-        else:
-            status_style = "dim"
-        
-        table.add_row(
-            Text(icon, style=style),
-            Text(f"{name} ({code})", style=style),
-            sch_arr_str,
-            sch_dep_str,
-            arr_str,
-            dep_str,
-            Text(display_status, style=status_style)
-        )
-    
-    # Add "skipped after" indicator
-    if skipped_after > 0:
-        table.add_row(
-            Text("⋮", style="dim"),
-            Text(f"[{skipped_after} later stops omitted]", style="dim italic"),
-            "", "", "", "", ""
-        )
-    
-    # Build title with filter info
-    title_parts = ["[bold]Stations[/]"]
-    if STATION_FROM or STATION_TO:
-        filter_desc = f"{STATION_FROM or 'start'} → {STATION_TO or 'end'}"
-        title_parts.append(f"[dim]({filter_desc})[/]")
-    title_parts.append("[dim](green=actual, cyan=estimated)[/]")
-    
-    return Panel(
-        table,
-        title=" ".join(title_parts),
-        border_style="magenta"
-    )
-
-
-def build_compact_display(train: dict) -> Text:
-    """Build a single-line compact display for the train status."""
-    route_name = train.get("routeName", "Unknown")
-    train_num = train.get("trainNum", "?")
-    velocity = train.get("velocity", 0)
-    status_msg = train.get("statusMsg", "")
-    stations = train.get("stations", [])
-    
-    # Find next station
-    next_station = "—"
-    eta = "—"
-    delay_str = ""
-    
-    for station in stations:
-        if station.get("status") in ("Enroute", "Station", ""):
-            next_station = station.get("code", "???")
-            est_arr = parse_time(station.get("arr"))
-            sch_arr = parse_time(station.get("schArr"))
-            if est_arr:
-                eta = format_time(est_arr)
-                if sch_arr:
-                    diff_mins = (est_arr - sch_arr).total_seconds() / 60
-                    if diff_mins > 1:
-                        delay_str = f" [red]+{diff_mins:.0f}m[/]"
-                    elif diff_mins < -1:
-                        delay_str = f" [green]{diff_mins:.0f}m[/]"
-            elif sch_arr:
-                eta = format_time(sch_arr)
-            break
-    
-    # Calculate progress
-    completed, _, total = calculate_progress(stations)
-    progress_pct = (completed / total * 100) if total > 0 else 0
-    
-    # Get position between stations
-    position = calculate_position_between_stations(train)
-    
-    # Build compact line
-    speed_str = f"{velocity:.0f}mph" if velocity else "—"
-    
-    compact = Text()
-    compact.append(f"🚂 {route_name} #{train_num}", style="bold")
-    compact.append(f" | ")
-    
-    # Show position if available
-    if position:
-        last_code, next_code, progress_frac, mins_remaining = position
-        pos_pct = int(progress_frac * 100)
-        compact.append(f"{last_code}", style="green")
-        compact.append(f"→{pos_pct}%→")
-        compact.append(f"{next_code}", style="cyan")
-        if mins_remaining > 0:
-            compact.append(f" ({mins_remaining}m)")
-        else:
-            compact.append(" (arriving)")
-    else:
-        compact.append(f"Next: {next_station}", style="cyan")
-    
-    compact.append(f" @ {eta}")
-    compact.append_text(Text.from_markup(delay_str))
-    compact.append(f" | {speed_str}")
-    compact.append(f" | {progress_pct:.0f}%")
-    
-    if status_msg:
-        compact.append(f" | {status_msg}", style="yellow")
-    
-    if _cache.last_fetch_time:
-        compact.append(f" | Updated {_cache.last_fetch_time.strftime('%H:%M:%S')}", style="dim")
-    
-    return compact
-
-
-def build_error_panel(error: str) -> Panel:
-    """Build an error display panel."""
-    return Panel(
-        Text(f"Error: {error}", style="bold red"),
-        title="[bold red]Error[/]",
-        border_style="red"
-    )
-
-
-def build_not_found_panel(train_number: str) -> Panel:
-    """Build a not found display panel."""
-    content = Text()
-    content.append(f"Train #{train_number} not found.\n\n", style="bold yellow")
-    content.append("This could mean:\n", style="white")
-    content.append("• The train hasn't started its journey today\n", style="dim")
-    content.append("• The train number is incorrect\n", style="dim")
-    content.append("• The train has completed its journey\n", style="dim")
-    content.append("\nTry checking the train number or wait for the train to depart.", style="white")
-    
-    return Panel(
-        content,
-        title="[bold yellow]Train Not Found[/]",
-        border_style="yellow"
-    )
 
 
 def build_display(train_number: str, show_all: bool = False) -> Layout | Text:
