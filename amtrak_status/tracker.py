@@ -34,27 +34,28 @@ from rich.table import Table
 from rich.text import Text
 from rich.prompt import Prompt
 
+from .config import (
+    API_BASE, REFRESH_INTERVAL as _DEFAULT_REFRESH_INTERVAL,
+    MAX_RETRIES, RETRY_DELAY,
+    LAYOVER_COMFORTABLE, LAYOVER_TIGHT, LAYOVER_RISKY,
+)
+from .models import (
+    _now, parse_time, format_time, get_status_style,
+    is_station_cancelled, find_station_index, find_current_station_index,
+    filter_stations, calculate_progress, calculate_position_between_stations,
+)
+from .connection import (
+    find_overlapping_stations, get_station_times, get_station_status,
+    calculate_layover,
+)
 
-def _now():
-    """Current local time. Extracted for test patching."""
-    return datetime.now()
-
-
-API_BASE = "https://api-v3.amtraker.com/v3"
-REFRESH_INTERVAL = 30  # seconds
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
+REFRESH_INTERVAL = _DEFAULT_REFRESH_INTERVAL
 
 # Display options (set via command line args)
 COMPACT_MODE = False
 STATION_FROM: str | None = None
 STATION_TO: str | None = None
 FOCUS_CURRENT = True  # Auto-focus on current station
-
-# Connection/layover time thresholds (in minutes)
-LAYOVER_COMFORTABLE = 60  # 1 hour or more - green
-LAYOVER_TIGHT = 45        # 45 minutes - yellow
-LAYOVER_RISKY = 30        # 30 minutes or less - red
 
 # Notification options
 NOTIFY_STATIONS: set[str] = set()  # Station codes to notify on (uppercase)
@@ -74,111 +75,6 @@ _last_error: str | None = None
 _train_caches: dict[str, dict[str, Any]] = {}  # train_num -> {data, fetch_time, error}
 
 
-def is_station_cancelled(station: dict) -> bool:
-    """
-    Detect if a station stop has been cancelled.
-    
-    Cancelled stops typically have:
-    - No scheduled arrival AND no scheduled departure times, OR
-    - Status that indicates cancellation, OR
-    - Status is "Station" but no actual arrival/departure times (train never actually stopped)
-    
-    This is a heuristic based on observed API behavior.
-    """
-    status = station.get("status", "")
-    
-    # Check for explicit cancellation indicators in status
-    status_lower = status.lower()
-    if "cancel" in status_lower or "skip" in status_lower:
-        return True
-    
-    # If there's no scheduled arrival AND no scheduled departure, likely cancelled
-    sch_arr = station.get("schArr")
-    sch_dep = station.get("schDep")
-    
-    if not sch_arr and not sch_dep:
-        return True
-    
-    # If status is "Station" (meaning train should be there) but there are no
-    # actual arrival/departure times, this stop was likely cancelled.
-    # A real "Station" status would have at least an arrival time.
-    if status == "Station":
-        arr = station.get("arr")
-        dep = station.get("dep")
-        if not arr and not dep:
-            return True
-    
-    return False
-
-
-def calculate_position_between_stations(train: dict) -> tuple[str, str, float, int] | None:
-    """
-    Calculate train's position between the last departed and next station using time.
-    Returns (last_station_code, next_station_code, progress_fraction, minutes_remaining)
-    or None if position can't be determined.
-    
-    Uses scheduled/actual departure from last station and estimated/scheduled arrival
-    at next station to calculate progress as a fraction of time elapsed.
-    Skips cancelled stops.
-    """
-    stations = train.get("stations", [])
-    
-    # Find last departed station and next station, skipping cancelled stops
-    last_departed_idx = -1
-    next_station_idx = -1
-    
-    for i, station in enumerate(stations):
-        # Skip cancelled stops
-        if is_station_cancelled(station):
-            continue
-            
-        status = station.get("status", "")
-        if status == "Departed":
-            last_departed_idx = i
-        elif status in ("Enroute", "Station", "") and next_station_idx == -1:
-            next_station_idx = i
-            break
-    
-    if last_departed_idx == -1 or next_station_idx == -1:
-        return None
-    
-    last_station = stations[last_departed_idx]
-    next_station = stations[next_station_idx]
-    
-    last_code = last_station.get("code", "").upper()
-    next_code = next_station.get("code", "").upper()
-    
-    # Get departure time from last station (actual if available, else scheduled)
-    dep_time = parse_time(last_station.get("dep")) or parse_time(last_station.get("schDep"))
-    
-    # Get arrival time at next station (estimated if available, else scheduled)
-    arr_time = parse_time(next_station.get("arr")) or parse_time(next_station.get("schArr"))
-    
-    if not dep_time or not arr_time:
-        return None
-    
-    # Get current time, matching timezone awareness of parsed times
-    if dep_time.tzinfo is not None:
-        from datetime import timezone
-        now = datetime.now(timezone.utc).astimezone(dep_time.tzinfo)
-    else:
-        now = _now()
-    
-    # Calculate total segment duration and elapsed time
-    total_duration = (arr_time - dep_time).total_seconds()
-    elapsed = (now - dep_time).total_seconds()
-    
-    if total_duration <= 0:
-        return (last_code, next_code, 1.0, 0)
-    
-    # Calculate progress (0.0 = just departed, 1.0 = arriving)
-    progress = max(0.0, min(1.0, elapsed / total_duration))
-    
-    # Calculate minutes remaining
-    remaining_seconds = max(0, (arr_time - now).total_seconds())
-    minutes_remaining = int(remaining_seconds / 60)
-    
-    return (last_code, next_code, progress, minutes_remaining)
 
 
 def initialize_notification_state(train: dict) -> None:
@@ -478,104 +374,6 @@ def build_predeparture_train_data(train_number: str, station_code: str, station_
     return data
 
 
-def parse_time(time_val: str | None) -> datetime | None:
-    """Parse an ISO 8601 time string from the API."""
-    if not time_val or not isinstance(time_val, str):
-        return None
-
-    try:
-        return datetime.fromisoformat(time_val.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return None
-
-
-def format_time(dt: datetime | None) -> str:
-    """Format datetime for display."""
-    if not dt:
-        return "—"
-    return dt.strftime("%I:%M %p").lstrip("0")
-
-
-def get_status_style(station: dict) -> tuple[str, str]:
-    """Get display style based on station status."""
-    status = station.get("status", "")
-    
-    if status == "Departed":
-        return "green", "✓"
-    elif status == "Enroute":
-        return "yellow bold", "→"
-    elif status == "Station":
-        return "cyan bold", "●"
-    else:
-        return "dim", "○"
-
-
-def find_station_index(stations: list[dict], code: str | None) -> int | None:
-    """Find the index of a station by its code (case-insensitive)."""
-    if not code:
-        return None
-    code_upper = code.upper()
-    for i, station in enumerate(stations):
-        if station.get("code", "").upper() == code_upper:
-            return i
-    return None
-
-
-def find_current_station_index(stations: list[dict]) -> int:
-    """Find the index of the current/next station (first non-departed, non-cancelled)."""
-    for i, station in enumerate(stations):
-        if is_station_cancelled(station):
-            continue
-        status = station.get("status", "")
-        if status in ("Enroute", "Station", ""):
-            return i
-    return len(stations) - 1  # Default to last station if all departed
-
-
-def filter_stations(stations: list[dict], from_code: str | None, to_code: str | None) -> tuple[list[dict], int, int]:
-    """
-    Filter stations to show only those between from_code and to_code.
-    Returns (filtered_stations, skipped_before, skipped_after).
-    """
-    if not from_code and not to_code:
-        return stations, 0, 0
-    
-    from_idx = find_station_index(stations, from_code)
-    to_idx = find_station_index(stations, to_code)
-    
-    # Default to start/end if not found
-    start_idx = from_idx if from_idx is not None else 0
-    end_idx = to_idx if to_idx is not None else len(stations) - 1
-    
-    # Ensure start <= end
-    if start_idx > end_idx:
-        start_idx, end_idx = end_idx, start_idx
-    
-    skipped_before = start_idx
-    skipped_after = len(stations) - end_idx - 1
-    
-    return stations[start_idx:end_idx + 1], skipped_before, skipped_after
-
-
-def calculate_progress(stations: list[dict]) -> tuple[int, int, int]:
-    """Calculate journey progress. Returns (completed, current_idx, total).
-    Skips cancelled stops in the count."""
-    # Count non-cancelled stations
-    active_stations = [s for s in stations if not is_station_cancelled(s)]
-    total = len(active_stations)
-    current_idx = 0
-    completed = 0
-    
-    for i, station in enumerate(active_stations):
-        status = station.get("status", "")
-        if status == "Departed":
-            completed += 1
-            current_idx = i + 1
-        elif status in ("Enroute", "Station"):
-            current_idx = i
-            break
-    
-    return completed, current_idx, total
 
 
 def build_header(train: dict) -> Panel:
@@ -730,136 +528,6 @@ def build_progress_bar(train: dict) -> Panel:
     return Panel(progress, title="[bold]Journey Progress[/]", border_style="blue")
 
 
-# =============================================================================
-# Multi-train Connection Functions
-# =============================================================================
-
-def find_overlapping_stations(train1: dict, train2: dict) -> list[str]:
-    """
-    Find station codes that appear in both trains' routes.
-    Returns list of station codes in the order they appear on train1's route.
-    """
-    stations1 = {s.get("code", "").upper() for s in train1.get("stations", [])}
-    stations2 = {s.get("code", "").upper() for s in train2.get("stations", [])}
-    
-    overlap = stations1 & stations2
-    
-    # Return in order of train1's route
-    return [
-        s.get("code", "").upper() 
-        for s in train1.get("stations", []) 
-        if s.get("code", "").upper() in overlap
-    ]
-
-
-def get_station_times(train: dict, station_code: str) -> tuple[datetime | None, datetime | None, datetime | None, datetime | None]:
-    """
-    Get scheduled and actual/estimated times for a station.
-    Returns (sch_arr, sch_dep, actual_arr, actual_dep).
-    """
-    station_code = station_code.upper()
-    for station in train.get("stations", []):
-        if station.get("code", "").upper() == station_code:
-            sch_arr = parse_time(station.get("schArr"))
-            sch_dep = parse_time(station.get("schDep"))
-            arr = parse_time(station.get("arr"))
-            dep = parse_time(station.get("dep"))
-            return sch_arr, sch_dep, arr, dep
-    return None, None, None, None
-
-
-def get_station_status(train: dict, station_code: str) -> str:
-    """Get the status of a specific station on a train's route."""
-    station_code = station_code.upper()
-    for station in train.get("stations", []):
-        if station.get("code", "").upper() == station_code:
-            return station.get("status", "")
-    return ""
-
-
-def calculate_layover(train1: dict, train2: dict, connection_station: str) -> dict:
-    """
-    Calculate layover information between two trains at a connection station.
-    
-    Returns dict with:
-        - station_code: The connection station code
-        - station_name: The connection station name
-        - train1_arrives: Arrival time of first train (actual/estimated or scheduled)
-        - train2_departs: Departure time of second train (actual/estimated or scheduled)
-        - layover_minutes: Minutes between arrival and departure
-        - layover_status: 'comfortable', 'tight', 'risky', or 'missed'
-        - train1_status: Status of train1 at connection station
-        - train2_status: Status of train2 at connection station
-        - is_valid: Whether connection is still possible
-    """
-    connection_station = connection_station.upper()
-    
-    # Get station name
-    station_name = connection_station
-    for station in train1.get("stations", []):
-        if station.get("code", "").upper() == connection_station:
-            station_name = station.get("name", connection_station)
-            break
-    
-    # Get times for train1 arrival at connection
-    sch_arr1, _, arr1, _ = get_station_times(train1, connection_station)
-    train1_arrives = arr1 or sch_arr1
-    
-    # Get times for train2 departure from connection
-    _, sch_dep2, _, dep2 = get_station_times(train2, connection_station)
-    train2_departs = dep2 or sch_dep2
-    
-    # Get statuses
-    train1_status = get_station_status(train1, connection_station)
-    train2_status = get_station_status(train2, connection_station)
-    
-    result = {
-        "station_code": connection_station,
-        "station_name": station_name,
-        "train1_arrives": train1_arrives,
-        "train2_departs": train2_departs,
-        "layover_minutes": None,
-        "layover_status": "unknown",
-        "train1_status": train1_status,
-        "train2_status": train2_status,
-        "is_valid": True,
-    }
-    
-    if train1_arrives and train2_departs:
-        # Handle timezone-aware comparison
-        if train1_arrives.tzinfo != train2_departs.tzinfo:
-            # Convert to same timezone for comparison
-            if train2_departs.tzinfo is not None and train1_arrives.tzinfo is None:
-                from datetime import timezone
-                train1_arrives = train1_arrives.replace(tzinfo=timezone.utc)
-            elif train1_arrives.tzinfo is not None and train2_departs.tzinfo is None:
-                from datetime import timezone
-                train2_departs = train2_departs.replace(tzinfo=timezone.utc)
-        
-        layover_seconds = (train2_departs - train1_arrives).total_seconds()
-        layover_minutes = int(layover_seconds / 60)
-        result["layover_minutes"] = layover_minutes
-        
-        if layover_minutes < 0:
-            result["layover_status"] = "missed"
-            result["is_valid"] = False
-        elif layover_minutes < LAYOVER_RISKY:
-            result["layover_status"] = "risky"
-        elif layover_minutes < LAYOVER_TIGHT:
-            result["layover_status"] = "tight"
-        elif layover_minutes < LAYOVER_COMFORTABLE:
-            result["layover_status"] = "tight"
-        else:
-            result["layover_status"] = "comfortable"
-    
-    # Check if train2 has already departed
-    if train2_status == "Departed":
-        # Check if train1 has arrived
-        if train1_status not in ("Departed", "Station"):
-            result["layover_status"] = "missed"
-            result["is_valid"] = False
-    
-    return result
 
 
 def build_connection_panel(train1: dict, train2: dict, connection_station: str) -> Panel:
