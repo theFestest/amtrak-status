@@ -385,7 +385,8 @@ def build_display(train_number: str, show_all: bool = False) -> Layout | Text:
     return layout
 
 
-def main():
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Track Amtrak train status in real-time",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -400,7 +401,7 @@ Examples:
     %(prog)s 42 --notify-at NYP      # Notify when arriving at New York
     %(prog)s 42 --notify-at PGH,HBG  # Notify at multiple stations
     %(prog)s 42 --notify-all         # Notify at every station
-    
+
 Train IDs can optionally include the day: 42-26 (train 42 from the 26th)
 
 Station codes are 3-letter codes like PGH (Pittsburgh), NYP (New York Penn),
@@ -441,7 +442,7 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
     )
     parser.add_argument(
         "--to",
-        dest="to_station", 
+        dest="to_station",
         metavar="CODE",
         help="Only show stations up to this station code (e.g., NYP)"
     )
@@ -466,12 +467,12 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
         action="store_true",
         help="Send notification when train arrives at any station"
     )
-    
-    args = parser.parse_args()
-    
-    # Set global config from args
+    return parser
+
+
+def _apply_args_to_globals(args) -> None:
+    """Apply parsed CLI arguments to module-level config."""
     global REFRESH_INTERVAL, COMPACT_MODE, STATION_FROM, STATION_TO, FOCUS_CURRENT
-    global CONNECTION_STATION
 
     REFRESH_INTERVAL = args.refresh
     COMPACT_MODE = args.compact
@@ -479,188 +480,286 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
     STATION_TO = args.to_station
     FOCUS_CURRENT = not args.no_focus and not getattr(args, 'all', False)
 
-    # Set up notifications
     _notify_state.notify_all = args.notify_all
     if args.notify_at:
         _notify_state.stations.update(code.strip().upper() for code in args.notify_at.split(","))
-    
+
+
+def _fetch_predeparture_schedule(console, connection_station, missing_train):
+    """Try to fetch and cache predeparture schedule data for a missing train."""
+    station_data = fetch_station_schedule(connection_station)
+    if station_data and "error" not in station_data:
+        sched = get_train_schedule_from_station(station_data, missing_train)
+        if sched:
+            console.print(f"[green]✓ Found schedule for train {missing_train} at {connection_station}[/]")
+            _cache.per_train[missing_train] = {
+                "data": build_predeparture_train_data(missing_train, connection_station, sched),
+                "fetch_time": _now(),
+                "error": None
+            }
+            return True
+        else:
+            console.print(f"[yellow]No schedule found for train {missing_train}[/]")
+    return False
+
+
+def _setup_connection(console, train_numbers, connection_station):
+    """Set up multi-train connection: detect or validate connection station.
+
+    Returns the resolved connection station code.
+    """
+    console.print("[dim]Fetching train data...[/]")
+
+    train1_data = fetch_train_data(train_numbers[0])
+    train2_data = fetch_train_data(train_numbers[1])
+
+    train1_valid = train1_data and "error" not in train1_data
+    train2_valid = train2_data and "error" not in train2_data
+
+    # Connection station already provided
+    if connection_station:
+        if not train1_valid and not train2_valid:
+            console.print("[yellow]Neither train is active yet.[/]")
+            console.print(f"[dim]Fetching schedule from {connection_station}...[/]")
+
+            station_data = fetch_station_schedule(connection_station)
+            if station_data and "error" not in station_data:
+                sched1 = get_train_schedule_from_station(station_data, train_numbers[0])
+                sched2 = get_train_schedule_from_station(station_data, train_numbers[1])
+
+                if sched1 or sched2:
+                    console.print(f"[green]✓ Found schedule data at {connection_station}[/]")
+                    if sched1:
+                        _cache.per_train[train_numbers[0]] = {
+                            "data": build_predeparture_train_data(train_numbers[0], connection_station, sched1),
+                            "fetch_time": _now(),
+                            "error": None
+                        }
+                    if sched2:
+                        _cache.per_train[train_numbers[1]] = {
+                            "data": build_predeparture_train_data(train_numbers[1], connection_station, sched2),
+                            "fetch_time": _now(),
+                            "error": None
+                        }
+                else:
+                    console.print(f"[yellow]No schedule found for trains at {connection_station}[/]")
+            sleep(1)
+        elif not train1_valid or not train2_valid:
+            missing_train = train_numbers[0] if not train1_valid else train_numbers[1]
+            console.print(f"[yellow]Train {missing_train} not active yet - checking station schedule...[/]")
+            _fetch_predeparture_schedule(console, connection_station, missing_train)
+            sleep(1)
+
+        console.print(f"[green]✓ Connection station: {connection_station}[/]")
+        sleep(1)
+        return connection_station
+
+    # Need to detect connection station
+    if train1_valid and train2_valid:
+        overlaps = find_overlapping_stations(train1_data, train2_data)
+
+        if not overlaps:
+            console.print("[red]No overlapping stations found between these trains.[/]")
+            console.print("[dim]These trains don't share any stations. Use single-train tracking instead.[/]")
+            sys.exit(1)
+        elif len(overlaps) == 1:
+            connection_station = overlaps[0]
+            station_name = connection_station
+            for s in train1_data.get("stations", []):
+                if s.get("code", "").upper() == connection_station:
+                    station_name = s.get("name", connection_station)
+                    break
+            console.print(f"[green]✓ Auto-detected connection at {station_name} ({connection_station})[/]")
+            sleep(1)
+        else:
+            connection_station = select_connection_station(console, overlaps, train1_data, train2_data)
+            if not connection_station:
+                console.print("[red]No connection station selected.[/]")
+                sys.exit(1)
+            console.print(f"[green]✓ Connection set to {connection_station}[/]")
+            sleep(1)
+
+    elif train1_valid or train2_valid:
+        missing_train = train_numbers[0] if not train1_valid else train_numbers[1]
+        active_train = train_numbers[1] if not train1_valid else train_numbers[0]
+        active_data = train2_data if not train1_valid else train1_data
+
+        console.print(f"[yellow]Train {missing_train} is not active yet (may be predeparture).[/]")
+        console.print(f"[dim]Train {active_train} is active.[/]")
+        console.print()
+
+        console.print("[bold]Please specify your connection station.[/]")
+        console.print("[dim]Stations on the active train's route:[/]")
+
+        stations = active_data.get("stations", [])
+        for i, s in enumerate(stations[:15], 1):
+            code = s.get("code", "???")
+            name = s.get("name", code)
+            console.print(f"  {code}: {name}")
+        if len(stations) > 15:
+            console.print(f"  ... and {len(stations) - 15} more")
+
+        console.print()
+        connection_station = Prompt.ask(
+            "Enter connection station code",
+            default=stations[0].get("code", "") if stations else ""
+        ).upper()
+
+        if not connection_station:
+            console.print("[red]No connection station provided.[/]")
+            sys.exit(1)
+
+        console.print(f"[dim]Fetching schedule from {connection_station}...[/]")
+        _fetch_predeparture_schedule(console, connection_station, missing_train)
+
+        console.print(f"[green]✓ Connection set to {connection_station}[/]")
+        sleep(1)
+
+    else:
+        console.print(f"[yellow]Neither train {train_numbers[0]} nor {train_numbers[1]} is active yet.[/]")
+        console.print()
+        connection_station = Prompt.ask(
+            "Enter connection station code (e.g., PHL, NYP, WAS)"
+        ).upper()
+
+        if not connection_station:
+            console.print("[red]No connection station provided.[/]")
+            sys.exit(1)
+
+        console.print(f"[dim]Fetching schedule from {connection_station}...[/]")
+        station_data = fetch_station_schedule(connection_station)
+        if station_data and "error" not in station_data:
+            for train_num in train_numbers[:2]:
+                sched = get_train_schedule_from_station(station_data, train_num)
+                if sched:
+                    console.print(f"[green]✓ Found schedule for train {train_num}[/]")
+                    _cache.per_train[train_num] = {
+                        "data": build_predeparture_train_data(train_num, connection_station, sched),
+                        "fetch_time": _now(),
+                        "error": None
+                    }
+                else:
+                    console.print(f"[yellow]No schedule found for train {train_num}[/]")
+
+        console.print(f"[green]✓ Connection set to {connection_station}[/]")
+        sleep(1)
+
+    return connection_station
+
+
+def _run_single_train(console, train_number, args):
+    """Run the single-train display loop."""
+    show_all = getattr(args, 'all', False)
+
+    if args.once:
+        result = build_display(train_number, show_all=show_all)
+        console.print(result)
+        if _cache.last_successful_data:
+            check_and_notify(_cache.last_successful_data)
+        return
+
+    if COMPACT_MODE:
+        result = build_display(train_number, show_all=show_all)
+        console.print(result)
+        if _cache.last_successful_data:
+            check_and_notify(_cache.last_successful_data)
+        try:
+            while True:
+                sleep(REFRESH_INTERVAL)
+                console.clear()
+                console.print(build_display(train_number, show_all=show_all))
+                if _cache.last_successful_data:
+                    check_and_notify(_cache.last_successful_data)
+        except KeyboardInterrupt:
+            pass
+        return
+
+    try:
+        with Live(
+            build_display(train_number, show_all=show_all),
+            console=console,
+            refresh_per_second=1,
+            screen=True
+        ) as live:
+            if _cache.last_successful_data:
+                check_and_notify(_cache.last_successful_data)
+
+            while True:
+                sleep(REFRESH_INTERVAL)
+                live.update(build_display(train_number, show_all=show_all))
+                if _cache.last_successful_data:
+                    check_and_notify(_cache.last_successful_data)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Tracking stopped.[/]")
+        sys.exit(0)
+
+
+def _run_multi_train(console, train_numbers, args):
+    """Run the multi-train display loop."""
+    show_all = getattr(args, 'all', False)
+
+    def _check_notifications():
+        """Check notifications for all tracked trains using cached data."""
+        for num in train_numbers[:2]:
+            if num in _cache.per_train and _cache.per_train[num].get("data"):
+                check_and_notify(_cache.per_train[num]["data"])
+
+    if args.once:
+        result = build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=show_all)
+        console.print(result)
+        _check_notifications()
+        return
+
+    if COMPACT_MODE:
+        console.print("[yellow]Compact mode with connections - showing basic info[/]")
+        try:
+            while True:
+                console.clear()
+                for num in train_numbers[:2]:
+                    data = fetch_train_data_cached(num)
+                    if data and "error" not in data:
+                        console.print(build_compact_display(data))
+                    else:
+                        console.print(Text(f"🚂 Train #{num}: Error or not found", style="red"))
+                _check_notifications()
+                sleep(REFRESH_INTERVAL)
+        except KeyboardInterrupt:
+            pass
+        return
+
+    try:
+        with Live(
+            build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=show_all),
+            console=console,
+            refresh_per_second=1,
+            screen=True
+        ) as live:
+            _check_notifications()
+
+            while True:
+                sleep(REFRESH_INTERVAL)
+                live.update(build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=show_all))
+                _check_notifications()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Tracking stopped.[/]")
+        sys.exit(0)
+
+
+def main():
+    """CLI entry point."""
+    global CONNECTION_STATION
+
+    args = _build_arg_parser().parse_args()
+    _apply_args_to_globals(args)
+
     console = Console()
-    
     train_numbers = args.train_numbers
     is_multi_train = len(train_numbers) >= 2
-    
-    # Handle multi-train connection setup
+
     if is_multi_train:
         CONNECTION_STATION = args.connection.upper() if args.connection else None
-        
-        console.print("[dim]Fetching train data...[/]")
-        
-        # Fetch data for first two trains
-        train1_data = fetch_train_data(train_numbers[0])
-        train2_data = fetch_train_data(train_numbers[1])
-        
-        train1_valid = train1_data and "error" not in train1_data
-        train2_valid = train2_data and "error" not in train2_data
-        
-        # If connection station provided, we can proceed even with one missing train
-        if CONNECTION_STATION:
-            if not train1_valid and not train2_valid:
-                console.print(f"[yellow]Neither train is active yet.[/]")
-                console.print(f"[dim]Fetching schedule from {CONNECTION_STATION}...[/]")
-                
-                # Try to get schedule info from station
-                station_data = fetch_station_schedule(CONNECTION_STATION)
-                if station_data and "error" not in station_data:
-                    sched1 = get_train_schedule_from_station(station_data, train_numbers[0])
-                    sched2 = get_train_schedule_from_station(station_data, train_numbers[1])
-                    
-                    if sched1 or sched2:
-                        console.print(f"[green]✓ Found schedule data at {CONNECTION_STATION}[/]")
-                        # Store synthetic predeparture data in cache
-                        if sched1:
-                            _cache.per_train[train_numbers[0]] = {
-                                "data": build_predeparture_train_data(train_numbers[0], CONNECTION_STATION, sched1),
-                                "fetch_time": _now(),
-                                "error": None
-                            }
-                        if sched2:
-                            _cache.per_train[train_numbers[1]] = {
-                                "data": build_predeparture_train_data(train_numbers[1], CONNECTION_STATION, sched2),
-                                "fetch_time": _now(),
-                                "error": None
-                            }
-                    else:
-                        console.print(f"[yellow]No schedule found for trains at {CONNECTION_STATION}[/]")
-                sleep(1)
-            elif not train1_valid or not train2_valid:
-                missing_train = train_numbers[0] if not train1_valid else train_numbers[1]
-                console.print(f"[yellow]Train {missing_train} not active yet - checking station schedule...[/]")
-                
-                station_data = fetch_station_schedule(CONNECTION_STATION)
-                if station_data and "error" not in station_data:
-                    sched = get_train_schedule_from_station(station_data, missing_train)
-                    if sched:
-                        console.print(f"[green]✓ Found schedule for train {missing_train} at {CONNECTION_STATION}[/]")
-                        _cache.per_train[missing_train] = {
-                            "data": build_predeparture_train_data(missing_train, CONNECTION_STATION, sched),
-                            "fetch_time": _now(),
-                            "error": None
-                        }
-                    else:
-                        console.print(f"[yellow]No schedule found for train {missing_train}[/]")
-                sleep(1)
-            
-            console.print(f"[green]✓ Connection station: {CONNECTION_STATION}[/]")
-            sleep(1)
-        
-        # No connection station provided - need to detect it
-        elif not CONNECTION_STATION:
-            # If both trains are valid, auto-detect connection
-            if train1_valid and train2_valid:
-                overlaps = find_overlapping_stations(train1_data, train2_data)
-                
-                if not overlaps:
-                    console.print("[red]No overlapping stations found between these trains.[/]")
-                    console.print("[dim]These trains don't share any stations. Use single-train tracking instead.[/]")
-                    sys.exit(1)
-                elif len(overlaps) == 1:
-                    CONNECTION_STATION = overlaps[0]
-                    station_name = CONNECTION_STATION
-                    for s in train1_data.get("stations", []):
-                        if s.get("code", "").upper() == CONNECTION_STATION:
-                            station_name = s.get("name", CONNECTION_STATION)
-                            break
-                    console.print(f"[green]✓ Auto-detected connection at {station_name} ({CONNECTION_STATION})[/]")
-                    sleep(1)
-                else:
-                    CONNECTION_STATION = select_connection_station(console, overlaps, train1_data, train2_data)
-                    if not CONNECTION_STATION:
-                        console.print("[red]No connection station selected.[/]")
-                        sys.exit(1)
-                    console.print(f"[green]✓ Connection set to {CONNECTION_STATION}[/]")
-                    sleep(1)
-            
-            # If only one train valid, we need user to provide connection station
-            elif train1_valid or train2_valid:
-                missing_train = train_numbers[0] if not train1_valid else train_numbers[1]
-                active_train = train_numbers[1] if not train1_valid else train_numbers[0]
-                active_data = train2_data if not train1_valid else train1_data
-                
-                console.print(f"[yellow]Train {missing_train} is not active yet (may be predeparture).[/]")
-                console.print(f"[dim]Train {active_train} is active.[/]")
-                console.print()
-                
-                # Show stations from the active train for user to pick connection
-                console.print("[bold]Please specify your connection station.[/]")
-                console.print("[dim]Stations on the active train's route:[/]")
-                
-                stations = active_data.get("stations", [])
-                for i, s in enumerate(stations[:15], 1):  # Show first 15
-                    code = s.get("code", "???")
-                    name = s.get("name", code)
-                    console.print(f"  {code}: {name}")
-                if len(stations) > 15:
-                    console.print(f"  ... and {len(stations) - 15} more")
-                
-                console.print()
-                CONNECTION_STATION = Prompt.ask(
-                    "Enter connection station code",
-                    default=stations[0].get("code", "") if stations else ""
-                ).upper()
-                
-                if not CONNECTION_STATION:
-                    console.print("[red]No connection station provided.[/]")
-                    sys.exit(1)
-                
-                # Try to get schedule for missing train from station
-                console.print(f"[dim]Fetching schedule from {CONNECTION_STATION}...[/]")
-                station_data = fetch_station_schedule(CONNECTION_STATION)
-                if station_data and "error" not in station_data:
-                    sched = get_train_schedule_from_station(station_data, missing_train)
-                    if sched:
-                        console.print(f"[green]✓ Found schedule for train {missing_train}[/]")
-                        _cache.per_train[missing_train] = {
-                            "data": build_predeparture_train_data(missing_train, CONNECTION_STATION, sched),
-                            "fetch_time": _now(),
-                            "error": None
-                        }
-                    else:
-                        console.print(f"[yellow]No schedule found for train {missing_train} at {CONNECTION_STATION}[/]")
-                
-                console.print(f"[green]✓ Connection set to {CONNECTION_STATION}[/]")
-                sleep(1)
-            
-            # Neither train valid
-            else:
-                console.print(f"[yellow]Neither train {train_numbers[0]} nor {train_numbers[1]} is active yet.[/]")
-                console.print()
-                CONNECTION_STATION = Prompt.ask(
-                    "Enter connection station code (e.g., PHL, NYP, WAS)"
-                ).upper()
-                
-                if not CONNECTION_STATION:
-                    console.print("[red]No connection station provided.[/]")
-                    sys.exit(1)
-                
-                # Try to get schedules for both trains from station
-                console.print(f"[dim]Fetching schedule from {CONNECTION_STATION}...[/]")
-                station_data = fetch_station_schedule(CONNECTION_STATION)
-                if station_data and "error" not in station_data:
-                    for train_num in train_numbers[:2]:
-                        sched = get_train_schedule_from_station(station_data, train_num)
-                        if sched:
-                            console.print(f"[green]✓ Found schedule for train {train_num}[/]")
-                            _cache.per_train[train_num] = {
-                                "data": build_predeparture_train_data(train_num, CONNECTION_STATION, sched),
-                                "fetch_time": _now(),
-                                "error": None
-                            }
-                        else:
-                            console.print(f"[yellow]No schedule found for train {train_num}[/]")
-                
-                console.print(f"[green]✓ Connection set to {CONNECTION_STATION}[/]")
-                sleep(1)
-    
+        CONNECTION_STATION = _setup_connection(console, train_numbers, CONNECTION_STATION)
+
     # Show notification status if enabled
     if _notify_state.stations or _notify_state.notify_all:
         if _notify_state.notify_all:
@@ -668,101 +767,11 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
         else:
             console.print(f"[dim]🔔 Notifications enabled for: {', '.join(sorted(_notify_state.stations))}[/]")
         sleep(1)
-    
-    # Single train mode
-    if not is_multi_train:
-        train_number = train_numbers[0]
-        
-        if args.once:
-            result = build_display(train_number, show_all=getattr(args, 'all', False))
-            console.print(result)
-            if _cache.last_successful_data:
-                check_and_notify(_cache.last_successful_data)
-            return
-        
-        if COMPACT_MODE:
-            result = build_display(train_number, show_all=getattr(args, 'all', False))
-            console.print(result)
-            if _cache.last_successful_data:
-                check_and_notify(_cache.last_successful_data)
-            try:
-                while True:
-                    sleep(REFRESH_INTERVAL)
-                    console.clear()
-                    console.print(build_display(train_number, show_all=getattr(args, 'all', False)))
-                    if _cache.last_successful_data:
-                        check_and_notify(_cache.last_successful_data)
-            except KeyboardInterrupt:
-                pass
-            return
-        
-        try:
-            with Live(
-                build_display(train_number, show_all=getattr(args, 'all', False)),
-                console=console,
-                refresh_per_second=1,
-                screen=True
-            ) as live:
-                if _cache.last_successful_data:
-                    check_and_notify(_cache.last_successful_data)
-                
-                while True:
-                    sleep(REFRESH_INTERVAL)
-                    live.update(build_display(train_number, show_all=getattr(args, 'all', False)))
-                    if _cache.last_successful_data:
-                        check_and_notify(_cache.last_successful_data)
-        except KeyboardInterrupt:
-            console.print("\n[dim]Tracking stopped.[/]")
-            sys.exit(0)
-    
-    # Multi-train mode
+
+    if is_multi_train:
+        _run_multi_train(console, train_numbers, args)
     else:
-        def _check_multi_train_notifications():
-            """Check notifications for all tracked trains using cached data."""
-            for num in train_numbers[:2]:
-                if num in _cache.per_train and _cache.per_train[num].get("data"):
-                    check_and_notify(_cache.per_train[num]["data"])
-
-        if args.once:
-            result = build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=getattr(args, 'all', False))
-            console.print(result)
-            _check_multi_train_notifications()
-            return
-
-        if COMPACT_MODE:
-            # Compact mode for multi-train - show both trains on separate lines
-            console.print("[yellow]Compact mode with connections - showing basic info[/]")
-            try:
-                while True:
-                    console.clear()
-                    for num in train_numbers[:2]:
-                        data = fetch_train_data_cached(num)
-                        if data and "error" not in data:
-                            console.print(build_compact_display(data))
-                        else:
-                            console.print(Text(f"🚂 Train #{num}: Error or not found", style="red"))
-                    _check_multi_train_notifications()
-                    sleep(REFRESH_INTERVAL)
-            except KeyboardInterrupt:
-                pass
-            return
-
-        try:
-            with Live(
-                build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=getattr(args, 'all', False)),
-                console=console,
-                refresh_per_second=1,
-                screen=True
-            ) as live:
-                _check_multi_train_notifications()
-
-                while True:
-                    sleep(REFRESH_INTERVAL)
-                    live.update(build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=getattr(args, 'all', False)))
-                    _check_multi_train_notifications()
-        except KeyboardInterrupt:
-            console.print("\n[dim]Tracking stopped.[/]")
-            sys.exit(0)
+        _run_single_train(console, train_numbers[0], args)
 
 
 if __name__ == "__main__":
