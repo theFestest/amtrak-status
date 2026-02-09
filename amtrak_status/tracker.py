@@ -18,13 +18,11 @@ Usage:
 """
 
 import argparse
-import subprocess
 import sys
 from datetime import datetime
 from time import sleep
 from typing import Any
 
-import httpx
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
@@ -48,6 +46,20 @@ from .connection import (
     find_overlapping_stations, get_station_times, get_station_status,
     calculate_layover,
 )
+from .api import (
+    TrainCache,
+    fetch_train_data as _api_fetch_train_data,
+    fetch_train_data_cached as _api_fetch_train_data_cached,
+    fetch_station_schedule,
+    get_train_schedule_from_station,
+    build_predeparture_train_data,
+)
+from .notifications import (
+    NotificationState,
+    send_notification,
+    initialize_notification_state as _notify_initialize,
+    check_and_notify as _notify_check_and_notify,
+)
 
 REFRESH_INTERVAL = _DEFAULT_REFRESH_INTERVAL
 
@@ -57,321 +69,33 @@ STATION_FROM: str | None = None
 STATION_TO: str | None = None
 FOCUS_CURRENT = True  # Auto-focus on current station
 
-# Notification options
-NOTIFY_STATIONS: set[str] = set()  # Station codes to notify on (uppercase)
-NOTIFY_ALL = False  # Notify on all station arrivals
-_notified_stations: set[str] = set()  # Stations we've already notified about
-_notifications_initialized = False  # Whether we've captured initial state
-
 # Multi-train tracking
 CONNECTION_STATION: str | None = None  # Station code where trains connect
 
-# Cache for last successful fetch (handles transient API failures)
-_last_successful_data: dict[str, Any] | None = None
-_last_fetch_time: datetime | None = None
-_last_error: str | None = None
-
-# Per-train caches for multi-train mode
-_train_caches: dict[str, dict[str, Any]] = {}  # train_num -> {data, fetch_time, error}
+# Encapsulated state objects (replace the old scattered globals)
+_cache = TrainCache()
+_notify_state = NotificationState()
 
 
+# Wrapper functions that pass module-level state objects
+def fetch_train_data(train_number: str) -> dict[str, Any] | None:
+    """Fetch train data from the Amtraker API with retry logic."""
+    return _api_fetch_train_data(train_number, _cache)
+
+
+def fetch_train_data_cached(train_number: str) -> dict[str, Any] | None:
+    """Fetch train data with per-train caching for multi-train mode."""
+    return _api_fetch_train_data_cached(train_number, _cache)
 
 
 def initialize_notification_state(train: dict) -> None:
-    """
-    Capture the initial state of stations so we don't notify
-    for arrivals/departures that happened before the script started.
-    
-    Marks any station with a non-empty, non-"Enroute" status as already seen.
-    This handles edge cases like schedule errors where multiple stations
-    might show as "Station" simultaneously.
-    """
-    global _notified_stations, _notifications_initialized
-    
-    if _notifications_initialized:
-        return
-    
-    stations = train.get("stations", [])
-    found_first_future = False
-    
-    for station in stations:
-        code = station.get("code", "").upper()
-        status = station.get("status", "")
-        
-        # Mark stations as "seen" if they have any status indicating
-        # the train has already been there (Departed, Station, or unknown/error states)
-        # Only stations with "Enroute" or empty status are truly "future"
-        if status == "Enroute" and not found_first_future:
-            # This is the next station - don't mark it, but mark everything before
-            found_first_future = True
-        elif status in ("Departed", "Station") or (status and status not in ("Enroute", "")):
-            # Already visited or has some other status (schedule error, etc.)
-            _notified_stations.add(code)
-    
-    _notifications_initialized = True
-
-
-def send_notification(title: str, message: str) -> bool:
-    """
-    Send a system notification with fallback to terminal bell.
-    Returns True if system notification was sent, False if fell back to bell.
-    """
-    try:
-        if sys.platform == "darwin":
-            # macOS
-            subprocess.run(
-                ["osascript", "-e", f'display notification "{message}" with title "{title}"'],
-                check=True,
-                capture_output=True,
-                timeout=5
-            )
-            return True
-        elif sys.platform.startswith("linux"):
-            # Linux with libnotify
-            subprocess.run(
-                ["notify-send", "-a", "Amtrak Tracker", title, message],
-                check=True,
-                capture_output=True,
-                timeout=5
-            )
-            return True
-        elif sys.platform == "win32":
-            # Windows PowerShell toast
-            ps_script = f'''
-            Add-Type -AssemblyName System.Windows.Forms
-            $balloon = New-Object System.Windows.Forms.NotifyIcon
-            $balloon.Icon = [System.Drawing.SystemIcons]::Information
-            $balloon.BalloonTipTitle = "{title}"
-            $balloon.BalloonTipText = "{message}"
-            $balloon.Visible = $true
-            $balloon.ShowBalloonTip(5000)
-            '''
-            subprocess.run(
-                ["powershell", "-Command", ps_script],
-                check=True,
-                capture_output=True,
-                timeout=5
-            )
-            return True
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    
-    # Fallback: terminal bell
-    print("\a", end="", flush=True)
-    return False
+    """Capture the initial state of stations so we don't notify for pre-existing arrivals."""
+    _notify_initialize(train, _notify_state)
 
 
 def check_and_notify(train: dict) -> list[str]:
-    """
-    Check if train has arrived at any stations we should notify about.
-    Returns list of station codes that triggered notifications.
-    
-    Only notifies for NEW arrivals/departures since the script started.
-    """
-    global _notified_stations
-    
-    if not NOTIFY_STATIONS and not NOTIFY_ALL:
-        return []
-    
-    # Initialize state on first call - marks already-departed stations as "seen"
-    initialize_notification_state(train)
-    
-    notified = []
-    stations = train.get("stations", [])
-    route_name = train.get("routeName", "Train")
-    train_num = train.get("trainNum", "")
-    
-    for station in stations:
-        code = station.get("code", "").upper()
-        status = station.get("status", "")
-        name = station.get("name", code)
-        
-        # Check if train is at or has departed this station
-        if status in ("Station", "Departed"):
-            # Should we notify for this station?
-            should_notify = NOTIFY_ALL or code in NOTIFY_STATIONS
-            
-            # Have we already notified?
-            if should_notify and code not in _notified_stations:
-                _notified_stations.add(code)
-                
-                if status == "Station":
-                    title = f"🚂 {route_name} #{train_num} Arriving"
-                    message = f"Now arriving at {name} ({code})"
-                else:
-                    title = f"🚂 {route_name} #{train_num} Departed"
-                    message = f"Departed from {name} ({code})"
-                
-                send_notification(title, message)
-                notified.append(code)
-    
-    return notified
-
-
-def fetch_train_data(train_number: str) -> dict[str, Any] | None:
-    """Fetch train data from the Amtraker API with retry logic."""
-    global _last_successful_data, _last_fetch_time, _last_error, _train_caches
-    
-    for attempt in range(MAX_RETRIES):
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(f"{API_BASE}/trains/{train_number}")
-                response.raise_for_status()
-                data = response.json()
-                
-                # The API returns a dict with train number as key
-                # Try multiple key formats since API can be inconsistent
-                result = None
-                for key in [train_number, str(train_number), train_number.lstrip("0")]:
-                    if key in data and data[key]:
-                        # May have multiple trains with same number (different days)
-                        # Return the most recent one
-                        result = data[key][0]
-                        break
-                
-                # Also check if response has any data at all (single-key response)
-                if result is None and len(data) == 1:
-                    key = list(data.keys())[0]
-                    if data[key]:
-                        result = data[key][0]
-                
-                if result:
-                    # Update single-train cache (for backward compatibility)
-                    _last_successful_data = result
-                    _last_fetch_time = _now()
-                    _last_error = None
-                    
-                    # Also update per-train cache
-                    if train_number not in _train_caches:
-                        _train_caches[train_number] = {}
-                    _train_caches[train_number]["data"] = result
-                    _train_caches[train_number]["fetch_time"] = _now()
-                    _train_caches[train_number]["error"] = None
-                    
-                    return result
-                
-                # Train not in response - could be API flakiness or genuinely not found
-                # Use PER-TRAIN cache if available (not the global shared one)
-                if train_number in _train_caches:
-                    cache = _train_caches[train_number]
-                    if cache.get("data") and cache.get("fetch_time"):
-                        age = (_now() - cache["fetch_time"]).total_seconds()
-                        if age < 300:  # Use cache for up to 5 minutes
-                            _last_error = "Train not in API response (using cached data)"
-                            return cache["data"]
-                
-                return None
-                
-        except httpx.HTTPStatusError as e:
-            error_msg = f"HTTP {e.response.status_code}"
-            if attempt < MAX_RETRIES - 1:
-                sleep(RETRY_DELAY * (attempt + 1))  # Exponential backoff
-                continue
-            
-            # All retries failed - use PER-TRAIN cache if available
-            if train_number in _train_caches:
-                cache = _train_caches[train_number]
-                if cache.get("data") and cache.get("fetch_time"):
-                    age = (_now() - cache["fetch_time"]).total_seconds()
-                    if age < 300:
-                        _last_error = f"{error_msg} (using cached data)"
-                        return cache["data"]
-            
-            _last_error = error_msg
-            return {"error": error_msg}
-            
-        except httpx.HTTPError as e:
-            if attempt < MAX_RETRIES - 1:
-                sleep(RETRY_DELAY * (attempt + 1))
-                continue
-            
-            # All retries failed - use PER-TRAIN cache if available
-            if train_number in _train_caches:
-                cache = _train_caches[train_number]
-                if cache.get("data") and cache.get("fetch_time"):
-                    age = (_now() - cache["fetch_time"]).total_seconds()
-                    if age < 300:
-                        _last_error = f"{str(e)} (using cached data)"
-                        return cache["data"]
-            
-            _last_error = str(e)
-            return {"error": str(e)}
-    
-    return None
-
-
-def fetch_station_schedule(station_code: str) -> dict[str, Any] | None:
-    """
-    Fetch schedule data for a station from the Amtraker API.
-    Returns dict with upcoming trains at this station.
-    """
-    station_code = station_code.upper()
-    
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(f"{API_BASE}/stations/{station_code}")
-            response.raise_for_status()
-            data = response.json()
-            return data
-    except httpx.HTTPError as e:
-        return {"error": str(e)}
-
-
-def get_train_schedule_from_station(station_data: dict, train_number: str) -> dict | None:
-    """
-    Extract schedule info for a specific train from station data.
-    Returns a dict with arrival/departure times if found.
-    """
-    if not station_data or "error" in station_data:
-        return None
-    
-    train_number = str(train_number)
-    
-    # Station data is keyed by station code, with a list of trains
-    for station_code, trains in station_data.items():
-        if not isinstance(trains, list):
-            continue
-        for train in trains:
-            train_num = str(train.get("trainNum", ""))
-            if train_num == train_number or train_num.split("-")[0] == train_number:
-                return {
-                    "trainNum": train_num,
-                    "schArr": train.get("schArr"),
-                    "schDep": train.get("schDep"),
-                    "arr": train.get("arr"),
-                    "dep": train.get("dep"),
-                    "status": train.get("status", ""),
-                }
-    
-    return None
-
-
-def build_predeparture_train_data(train_number: str, station_code: str, station_schedule: dict | None) -> dict:
-    """
-    Build a minimal train data dict for a predeparture train using station schedule info.
-    This allows us to show connection times even when the train isn't active yet.
-    """
-    data = {
-        "trainNum": train_number,
-        "routeName": f"Train {train_number}",
-        "trainState": "Predeparture",
-        "stations": [],
-        "_predeparture": True,  # Flag to indicate this is synthetic data
-    }
-    
-    if station_schedule:
-        # Add the connection station with schedule times
-        data["stations"].append({
-            "code": station_code,
-            "name": station_code,  # We don't have the full name
-            "schArr": station_schedule.get("schArr"),
-            "schDep": station_schedule.get("schDep"),
-            "arr": station_schedule.get("arr"),
-            "dep": station_schedule.get("dep"),
-            "status": "",
-        })
-    
-    return data
+    """Check if train has arrived at any stations we should notify about."""
+    return _notify_check_and_notify(train, _notify_state)
 
 
 
@@ -478,14 +202,14 @@ def build_header(train: dict) -> Panel:
         )
     
     # Build subtitle with status indicator - show last SUCCESSFUL update time
-    if _last_fetch_time:
-        update_str = f"Updated: {_last_fetch_time.strftime('%H:%M:%S')}"
+    if _cache.last_fetch_time:
+        update_str = f"Updated: {_cache.last_fetch_time.strftime('%H:%M:%S')}"
     else:
         update_str = "Updated: —"
     
     status_parts = [update_str]
-    if _last_error:
-        status_parts.append(f"[yellow]⚠ {_last_error}[/]")
+    if _cache.last_error:
+        status_parts.append(f"[yellow]⚠ {_cache.last_error}[/]")
     status_parts.append(f"Refresh: {REFRESH_INTERVAL}s")
     status_parts.append("Press Ctrl+C to quit")
     subtitle = " | ".join(status_parts)
@@ -761,32 +485,6 @@ def build_compact_train_header(train: dict) -> Panel:
     return Panel(header, border_style="cyan")
 
 
-def fetch_train_data_cached(train_number: str) -> dict[str, Any] | None:
-    """Fetch train data with per-train caching for multi-train mode."""
-    global _train_caches
-    
-    if train_number not in _train_caches:
-        _train_caches[train_number] = {"data": None, "fetch_time": None, "error": None}
-    
-    cache = _train_caches[train_number]
-    
-    # Try to fetch new data
-    result = fetch_train_data(train_number)
-    
-    if result and "error" not in result:
-        cache["data"] = result
-        cache["fetch_time"] = _now()
-        cache["error"] = None
-    elif cache["data"] and cache["fetch_time"]:
-        # Use cached data if fetch failed
-        age = (_now() - cache["fetch_time"]).total_seconds()
-        if age < 300:  # 5 minute cache
-            cache["error"] = "Using cached data"
-            return cache["data"]
-    
-    return result
-
-
 def build_predeparture_panel(train_number: str) -> Panel:
     """Build a panel for a train that hasn't departed yet."""
     content = Table.grid(padding=(0, 2))
@@ -828,12 +526,12 @@ def _apply_main_title(panel: Panel) -> None:
     """Add the main 'Amtrak Status' title and status subtitle to a panel."""
     panel.title = "[bold cyan]Amtrak Status[/]"
     status_parts = []
-    if _last_fetch_time:
-        status_parts.append(f"Updated: {_last_fetch_time.strftime('%H:%M:%S')}")
+    if _cache.last_fetch_time:
+        status_parts.append(f"Updated: {_cache.last_fetch_time.strftime('%H:%M:%S')}")
     else:
         status_parts.append("Updated: —")
-    if _last_error:
-        status_parts.append(f"[yellow]⚠ {_last_error}[/]")
+    if _cache.last_error:
+        status_parts.append(f"[yellow]⚠ {_cache.last_error}[/]")
     status_parts.append(f"Refresh: {REFRESH_INTERVAL}s")
     status_parts.append("Press Ctrl+C to quit")
     panel.subtitle = f"[dim]{' | '.join(status_parts)}[/]"
@@ -1261,8 +959,8 @@ def build_compact_display(train: dict) -> Text:
     if status_msg:
         compact.append(f" | {status_msg}", style="yellow")
     
-    if _last_fetch_time:
-        compact.append(f" | Updated {_last_fetch_time.strftime('%H:%M:%S')}", style="dim")
+    if _cache.last_fetch_time:
+        compact.append(f" | Updated {_cache.last_fetch_time.strftime('%H:%M:%S')}", style="dim")
     
     return compact
 
@@ -1413,18 +1111,18 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
     
     # Set global config from args
     global REFRESH_INTERVAL, COMPACT_MODE, STATION_FROM, STATION_TO, FOCUS_CURRENT
-    global NOTIFY_STATIONS, NOTIFY_ALL, CONNECTION_STATION
-    
+    global CONNECTION_STATION
+
     REFRESH_INTERVAL = args.refresh
     COMPACT_MODE = args.compact
     STATION_FROM = args.from_station
     STATION_TO = args.to_station
     FOCUS_CURRENT = not args.no_focus and not getattr(args, 'all', False)
-    
+
     # Set up notifications
-    NOTIFY_ALL = args.notify_all
+    _notify_state.notify_all = args.notify_all
     if args.notify_at:
-        NOTIFY_STATIONS.update(code.strip().upper() for code in args.notify_at.split(","))
+        _notify_state.stations.update(code.strip().upper() for code in args.notify_at.split(","))
     
     console = Console()
     
@@ -1460,13 +1158,13 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                         console.print(f"[green]✓ Found schedule data at {CONNECTION_STATION}[/]")
                         # Store synthetic predeparture data in cache
                         if sched1:
-                            _train_caches[train_numbers[0]] = {
+                            _cache.per_train[train_numbers[0]] = {
                                 "data": build_predeparture_train_data(train_numbers[0], CONNECTION_STATION, sched1),
                                 "fetch_time": _now(),
                                 "error": None
                             }
                         if sched2:
-                            _train_caches[train_numbers[1]] = {
+                            _cache.per_train[train_numbers[1]] = {
                                 "data": build_predeparture_train_data(train_numbers[1], CONNECTION_STATION, sched2),
                                 "fetch_time": _now(),
                                 "error": None
@@ -1483,7 +1181,7 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                     sched = get_train_schedule_from_station(station_data, missing_train)
                     if sched:
                         console.print(f"[green]✓ Found schedule for train {missing_train} at {CONNECTION_STATION}[/]")
-                        _train_caches[missing_train] = {
+                        _cache.per_train[missing_train] = {
                             "data": build_predeparture_train_data(missing_train, CONNECTION_STATION, sched),
                             "fetch_time": _now(),
                             "error": None
@@ -1561,7 +1259,7 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                     sched = get_train_schedule_from_station(station_data, missing_train)
                     if sched:
                         console.print(f"[green]✓ Found schedule for train {missing_train}[/]")
-                        _train_caches[missing_train] = {
+                        _cache.per_train[missing_train] = {
                             "data": build_predeparture_train_data(missing_train, CONNECTION_STATION, sched),
                             "fetch_time": _now(),
                             "error": None
@@ -1592,7 +1290,7 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                         sched = get_train_schedule_from_station(station_data, train_num)
                         if sched:
                             console.print(f"[green]✓ Found schedule for train {train_num}[/]")
-                            _train_caches[train_num] = {
+                            _cache.per_train[train_num] = {
                                 "data": build_predeparture_train_data(train_num, CONNECTION_STATION, sched),
                                 "fetch_time": _now(),
                                 "error": None
@@ -1604,11 +1302,11 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                 sleep(1)
     
     # Show notification status if enabled
-    if NOTIFY_STATIONS or NOTIFY_ALL:
-        if NOTIFY_ALL:
+    if _notify_state.stations or _notify_state.notify_all:
+        if _notify_state.notify_all:
             console.print("[dim]🔔 Notifications enabled for all stations[/]")
         else:
-            console.print(f"[dim]🔔 Notifications enabled for: {', '.join(sorted(NOTIFY_STATIONS))}[/]")
+            console.print(f"[dim]🔔 Notifications enabled for: {', '.join(sorted(_notify_state.stations))}[/]")
         sleep(1)
     
     # Single train mode
@@ -1618,22 +1316,22 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
         if args.once:
             result = build_display(train_number, show_all=getattr(args, 'all', False))
             console.print(result)
-            if _last_successful_data:
-                check_and_notify(_last_successful_data)
+            if _cache.last_successful_data:
+                check_and_notify(_cache.last_successful_data)
             return
         
         if COMPACT_MODE:
             result = build_display(train_number, show_all=getattr(args, 'all', False))
             console.print(result)
-            if _last_successful_data:
-                check_and_notify(_last_successful_data)
+            if _cache.last_successful_data:
+                check_and_notify(_cache.last_successful_data)
             try:
                 while True:
                     sleep(REFRESH_INTERVAL)
                     console.clear()
                     console.print(build_display(train_number, show_all=getattr(args, 'all', False)))
-                    if _last_successful_data:
-                        check_and_notify(_last_successful_data)
+                    if _cache.last_successful_data:
+                        check_and_notify(_cache.last_successful_data)
             except KeyboardInterrupt:
                 pass
             return
@@ -1645,14 +1343,14 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
                 refresh_per_second=1,
                 screen=True
             ) as live:
-                if _last_successful_data:
-                    check_and_notify(_last_successful_data)
+                if _cache.last_successful_data:
+                    check_and_notify(_cache.last_successful_data)
                 
                 while True:
                     sleep(REFRESH_INTERVAL)
                     live.update(build_display(train_number, show_all=getattr(args, 'all', False)))
-                    if _last_successful_data:
-                        check_and_notify(_last_successful_data)
+                    if _cache.last_successful_data:
+                        check_and_notify(_cache.last_successful_data)
         except KeyboardInterrupt:
             console.print("\n[dim]Tracking stopped.[/]")
             sys.exit(0)
@@ -1662,8 +1360,8 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
         def _check_multi_train_notifications():
             """Check notifications for all tracked trains using cached data."""
             for num in train_numbers[:2]:
-                if num in _train_caches and _train_caches[num].get("data"):
-                    check_and_notify(_train_caches[num]["data"])
+                if num in _cache.per_train and _cache.per_train[num].get("data"):
+                    check_and_notify(_cache.per_train[num]["data"])
 
         if args.once:
             result = build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=getattr(args, 'all', False))

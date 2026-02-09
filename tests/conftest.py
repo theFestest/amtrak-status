@@ -11,6 +11,8 @@ from rich.console import Console
 import amtrak_status.tracker as tracker
 import amtrak_status.models as models
 import amtrak_status.connection as connection
+from amtrak_status.api import TrainCache
+from amtrak_status.notifications import NotificationState
 
 
 # =============================================================================
@@ -34,16 +36,10 @@ def reset_globals():
     tracker.STATION_FROM = None
     tracker.STATION_TO = None
     tracker.FOCUS_CURRENT = True
-    tracker.NOTIFY_STATIONS = set()
-    tracker.NOTIFY_ALL = False
-    tracker._notified_stations = set()
-    tracker._notifications_initialized = False
     tracker.CONNECTION_STATION = None
-    tracker._last_successful_data = None
-    tracker._last_fetch_time = None
-    tracker._last_error = None
-    tracker._train_caches = {}
     tracker.REFRESH_INTERVAL = 30
+    tracker._cache = TrainCache()
+    tracker._notify_state = NotificationState()
     yield
 
 
@@ -52,7 +48,8 @@ def freeze_time():
     """Patch _now to return FIXED_NOW for deterministic tests."""
     with patch("amtrak_status.models._now", return_value=FIXED_NOW):
         with patch("amtrak_status.tracker._now", return_value=FIXED_NOW):
-            yield
+            with patch("amtrak_status.api._now", return_value=FIXED_NOW):
+                yield
 
 
 # =============================================================================
