@@ -1,0 +1,16 @@
+{
+  "PHL": {
+    "name": "Philadelphia 30th Street",
+    "code": "PHL",
+    "tz": "America/New_York",
+    "lat": 39.955615,
+    "lon": -75.181041,
+    "hasAddress": true,
+    "address1": "2955 Market Street",
+    "address2": " ",
+    "city": "Philadelphia",
+    "state": "PA",
+    "zip": "19104",
+    "trains": ["19-7", "42-8", "178-8", "79-8"]
+  }
+}

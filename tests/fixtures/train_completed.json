@@ -1,0 +1,83 @@
+{
+  "42": [
+    {
+      "routeName": "Pennsylvanian",
+      "trainNum": "42",
+      "trainNumRaw": "42",
+      "trainID": "42-8",
+      "lat": 40.75,
+      "lon": -73.99,
+      "trainTimely": "",
+      "iconColor": "#212529",
+      "textColor": "#ffffff",
+      "stations": [
+        {
+          "name": "Pittsburgh",
+          "code": "PGH",
+          "tz": "America/New_York",
+          "bus": false,
+          "schArr": "2026-02-08T07:25:00-05:00",
+          "schDep": "2026-02-08T07:30:00-05:00",
+          "arr": "2026-02-08T07:25:00-05:00",
+          "dep": "2026-02-08T07:30:00-05:00",
+          "arrCmnt": "",
+          "depCmnt": "",
+          "status": "Departed",
+          "stopIconColor": "#2a893d",
+          "platform": ""
+        },
+        {
+          "name": "Harrisburg",
+          "code": "HBG",
+          "tz": "America/New_York",
+          "bus": false,
+          "schArr": "2026-02-08T12:45:00-05:00",
+          "schDep": "2026-02-08T12:55:00-05:00",
+          "arr": "2026-02-08T12:48:00-05:00",
+          "dep": "2026-02-08T12:56:00-05:00",
+          "arrCmnt": "",
+          "depCmnt": "",
+          "status": "Departed",
+          "stopIconColor": "#2a893d",
+          "platform": ""
+        },
+        {
+          "name": "New York Penn",
+          "code": "NYP",
+          "tz": "America/New_York",
+          "bus": false,
+          "schArr": "2026-02-08T16:30:00-05:00",
+          "schDep": null,
+          "arr": "2026-02-08T16:28:00-05:00",
+          "dep": null,
+          "arrCmnt": "",
+          "depCmnt": "",
+          "status": "Departed",
+          "stopIconColor": "#2a893d",
+          "platform": ""
+        }
+      ],
+      "heading": "",
+      "eventCode": "NYP",
+      "eventTZ": "America/New_York",
+      "eventName": "New York Penn",
+      "origCode": "PGH",
+      "originTZ": "America/New_York",
+      "origName": "Pittsburgh",
+      "destCode": "NYP",
+      "destTZ": "America/New_York",
+      "destName": "New York Penn",
+      "trainState": "Completed",
+      "velocity": 0,
+      "statusMsg": "",
+      "createdAt": "2026-02-08T07:00:00-05:00",
+      "updatedAt": "2026-02-08T17:00:00-05:00",
+      "lastValTS": "2026-02-08T17:00:00-05:00",
+      "objectID": 3263,
+      "provider": "Amtrak",
+      "providerShort": "AMTK",
+      "onlyOfTrainNum": true,
+      "alerts": []
+    }
+  ]
+}
