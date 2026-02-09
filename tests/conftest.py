@@ -12,6 +12,7 @@ import amtrak_status.tracker as tracker
 import amtrak_status.models as models
 import amtrak_status.connection as connection
 from amtrak_status.api import TrainCache
+from amtrak_status.config import Config
 from amtrak_status.notifications import NotificationState
 
 
@@ -31,13 +32,8 @@ FIXED_NOW = datetime(2025, 3, 15, 14, 30, 0)
 
 @pytest.fixture(autouse=True)
 def reset_globals():
-    """Reset all module-level globals between tests."""
-    tracker.COMPACT_MODE = False
-    tracker.STATION_FROM = None
-    tracker.STATION_TO = None
-    tracker.FOCUS_CURRENT = True
-    tracker.CONNECTION_STATION = None
-    tracker.REFRESH_INTERVAL = 30
+    """Reset all module-level state between tests."""
+    tracker._config = Config()
     tracker._cache = TrainCache()
     tracker._notify_state = NotificationState()
     yield

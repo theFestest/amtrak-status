@@ -58,8 +58,13 @@ def _format_status(status_msg: str, train_state: str) -> tuple[str, str]:
     return display_status, status_style
 
 
-def _build_position_bar(train: dict, train_state: str, bar_width: int = 20) -> Text | None:
-    """Build the position progress bar between stations. Returns None if unavailable."""
+def _build_position_bar(
+    train: dict, train_state: str, bar_width: int = 20, compact: bool = False,
+) -> Text | None:
+    """Build the position progress bar between stations. Returns None if unavailable.
+
+    When compact=True, omits the 'Position:' prefix and uses shorter time labels.
+    """
     position = calculate_position_between_stations(train)
     if not position or train_state == "Predeparture":
         return None
@@ -70,11 +75,15 @@ def _build_position_bar(train: dict, train_state: str, bar_width: int = 20) -> T
 
     bar = f"[green]{'█' * filled}[/][dim]{'░' * empty}[/]"
     if mins_remaining > 0:
-        time_str = f"({mins_remaining} min)" if mins_remaining != 1 else "(1 min)"
+        if compact:
+            time_str = f"({mins_remaining}m)"
+        else:
+            time_str = f"({mins_remaining} min)" if mins_remaining != 1 else "(1 min)"
     else:
         time_str = "(arriving)"
 
-    return Text.from_markup(f"Position: {last_code} {bar} {next_code} [dim]{time_str}[/]")
+    prefix = "" if compact else "Position: "
+    return Text.from_markup(f"{prefix}{last_code} {bar} {next_code} [dim]{time_str}[/]")
 
 
 def build_header(train: dict, last_fetch_time=None, last_error=None, refresh_interval=30) -> Panel:
@@ -205,23 +214,9 @@ def build_compact_train_header(train: dict) -> Panel:
     )
 
     # Position bar (narrower for compact view)
-    position_text = _build_position_bar(train, train_state, bar_width=15)
+    position_text = _build_position_bar(train, train_state, bar_width=15, compact=True)
     if position_text:
-        # Reformat for compact: strip "Position: " prefix
-        position = calculate_position_between_stations(train)
-        if position:
-            last_code, next_code, progress_frac, mins_remaining = position
-            filled = int(progress_frac * 15)
-            empty = 15 - filled
-            bar = f"[green]{'█' * filled}[/][dim]{'░' * empty}[/]"
-            if mins_remaining > 0:
-                time_str = f"({mins_remaining}m)"
-            else:
-                time_str = "(arriving)"
-            header.add_row(
-                Text.from_markup(f"{last_code} {bar} {next_code} [dim]{time_str}[/]"),
-                ""
-            )
+        header.add_row(position_text, "")
 
     return Panel(header, border_style="cyan")
 

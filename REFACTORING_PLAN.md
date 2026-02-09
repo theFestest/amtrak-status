@@ -1,8 +1,8 @@
 # Refactoring Plan: amtrak-status
 
-## Status: Complete
+## Status: Complete (Phase 6 cleanup applied)
 
-All 5 phases executed successfully. 361 tests passing (1 xfailed) after every phase.
+All 5 original phases + Phase 6 cleanup executed successfully. 361 tests passing (1 xfailed).
 
 ---
 
@@ -10,11 +10,11 @@ All 5 phases executed successfully. 361 tests passing (1 xfailed) after every ph
 
 1. **Monolithic file** — `tracker.py` was 2,043 lines handling every concern. Now 778 lines (62% reduction), with logic distributed across 13 focused modules.
 
-2. **Global state everywhere** — 18 scattered globals replaced with 6 config globals + 2 encapsulated state objects (`TrainCache`, `NotificationState`). Wrapper functions in tracker.py maintain backward compatibility.
+2. **Global state everywhere** — 18 scattered globals replaced with a single `_config = Config()` dataclass instance + 2 encapsulated state objects (`TrainCache`, `NotificationState`). Wrapper functions in tracker.py inject state into pure display/API functions.
 
 3. **Duplicated display logic** — `build_header()` and `build_compact_train_header()` now share three private helpers: `_find_next_station_info()`, `_format_status()`, `_build_position_bar()`.
 
-4. **382-line `main()` function** — Decomposed into 6 focused functions: `_build_arg_parser()`, `_apply_args_to_globals()`, `_fetch_predeparture_schedule()`, `_setup_connection()`, `_run_single_train()`, `_run_multi_train()`, plus a slim `main()` orchestrator (~25 lines).
+4. **382-line `main()` function** — Decomposed into 6 focused functions: `_build_arg_parser()`, `_apply_args_to_config()`, `_fetch_predeparture_schedule()`, `_setup_connection()`, `_run_single_train()`, `_run_multi_train()`, plus a slim `main()` orchestrator (~25 lines).
 
 5. **Layover bug fixed** — `calculate_layover()` now uses `>=` thresholds: `>= 60` → comfortable, `>= 45` → tight, `< 45` → risky. Previously 45-60 minutes was incorrectly categorized as "tight" (same as 30-45).
 
@@ -56,7 +56,7 @@ Total: ~2,237 lines across 15 files (vs 2,043 in one file — modest growth from
 
 4. **Wrapper functions in `tracker.py`** — Instead of updating all test mock targets to point at the new modules, we kept backward-compatible wrapper functions in `tracker.py` that pass module-level state. Tests that patch `tracker.function_name` continue to work. Mock targets for imports that moved completely (httpx, subprocess, sleep for retries) were updated to the new module paths.
 
-5. **Config dataclass exists but isn't used for runtime config** — `config.py` contains a `Config` dataclass as specified, but the module-level globals in `tracker.py` remain as the runtime config mechanism. This was a pragmatic choice to avoid rewriting every test that sets `tracker.COMPACT_MODE = True` etc. A future pass could thread a `Config` object through all functions.
+5. **Config dataclass now used for runtime config** — The 6 scattered globals (`COMPACT_MODE`, `STATION_FROM`, `STATION_TO`, `FOCUS_CURRENT`, `CONNECTION_STATION`, `REFRESH_INTERVAL`) were consolidated into `_config = Config()`. Tests updated to use `tracker._config.compact_mode` etc.
 
 ---
 
@@ -91,7 +91,20 @@ Total: ~2,237 lines across 15 files (vs 2,043 in one file — modest growth from
 - `reset_globals` fixture simplified (8 assignments: 6 config + 2 state objects)
 - `freeze_time` fixture patches `_now` across 3 modules (models, tracker, api)
 - Final test run: 361 passed, 1 xfailed
-- This document updated to reflect completion
+
+### Phase 6: Codebase cleanup ✓
+- Consolidated 6 module-level globals into single `_config = Config()` dataclass instance
+- Removed `_apply_args_to_globals()` (with `global` keyword), replaced with `_apply_args_to_config()`
+- Removed pure re-export wrapper `build_compact_train_header()` — now a direct module alias
+- Made `_apply_main_title()` private (only used internally by `build_multi_train_display`)
+- Fixed duplicate position bar rendering in `header.py` — `build_compact_train_header()` was calling `_build_position_bar()` then reimplementing it; now uses `compact=True` param
+- Extracted `_build_partial_connection_panel()` helper, deduplicating ~40 lines across the train1-only and train2-only branches
+- Extracted `_find_station_name()` helper to replace repeated station name lookup loops
+- Cleaned up unused imports (API_BASE, RETRY_DELAY, layover constants, datetime)
+- Updated conftest.py `reset_globals` fixture (3 assignments vs 8)
+- Updated all test references from `tracker.COMPACT_MODE` → `tracker._config.compact_mode` etc.
+- tracker.py reduced from 778 to 765 lines
+- 361 tests passing
 
 ---
 

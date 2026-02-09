@@ -19,7 +19,6 @@ Usage:
 
 import argparse
 import sys
-from datetime import datetime
 from time import sleep
 from typing import Any
 
@@ -31,11 +30,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.prompt import Prompt
 
-from .config import (
-    API_BASE, REFRESH_INTERVAL as _DEFAULT_REFRESH_INTERVAL,
-    MAX_RETRIES, RETRY_DELAY,
-    LAYOVER_COMFORTABLE, LAYOVER_TIGHT, LAYOVER_RISKY,
-)
+from .config import Config, MAX_RETRIES
 from .models import (
     _now, parse_time, format_time, get_status_style,
     is_station_cancelled, find_station_index, find_current_station_index,
@@ -73,23 +68,18 @@ from .display import (
     build_predeparture_header,
 )
 
-REFRESH_INTERVAL = _DEFAULT_REFRESH_INTERVAL
+# Re-export: no state injection needed, just a direct alias for display function
+build_compact_train_header = _display_build_compact_train_header
 
-# Display options (set via command line args)
-COMPACT_MODE = False
-STATION_FROM: str | None = None
-STATION_TO: str | None = None
-FOCUS_CURRENT = True  # Auto-focus on current station
+# Runtime state: a single Config object replaces the old scattered globals
+_config = Config()
 
-# Multi-train tracking
-CONNECTION_STATION: str | None = None  # Station code where trains connect
-
-# Encapsulated state objects (replace the old scattered globals)
+# Encapsulated state objects
 _cache = TrainCache()
 _notify_state = NotificationState()
 
 
-# Wrapper functions that pass module-level state objects
+# Wrapper functions that inject module-level state into pure functions
 def fetch_train_data(train_number: str) -> dict[str, Any] | None:
     """Fetch train data from the Amtraker API with retry logic."""
     return _api_fetch_train_data(train_number, _cache)
@@ -110,29 +100,13 @@ def check_and_notify(train: dict) -> list[str]:
     return _notify_check_and_notify(train, _notify_state)
 
 
-# Display wrapper functions that pass module-level state
 def build_header(train: dict) -> Panel:
     """Build the header panel with train info."""
     return _display_build_header(
         train,
         last_fetch_time=_cache.last_fetch_time,
         last_error=_cache.last_error,
-        refresh_interval=REFRESH_INTERVAL,
-    )
-
-
-def build_compact_train_header(train: dict) -> Panel:
-    """Build a more compact header for multi-train view."""
-    return _display_build_compact_train_header(train)
-
-
-def _apply_main_title(panel: Panel) -> None:
-    """Add the main 'Amtrak Status' title and status subtitle to a panel."""
-    _display_apply_main_title(
-        panel,
-        last_fetch_time=_cache.last_fetch_time,
-        last_error=_cache.last_error,
-        refresh_interval=REFRESH_INTERVAL,
+        refresh_interval=_config.refresh_interval,
     )
 
 
@@ -141,15 +115,91 @@ def build_stations_table(train: dict, focus: bool = True) -> Panel:
     return _display_build_stations_table(
         train,
         focus=focus,
-        station_from=STATION_FROM,
-        station_to=STATION_TO,
-        focus_current=FOCUS_CURRENT,
+        station_from=_config.station_from,
+        station_to=_config.station_to,
+        focus_current=_config.focus_current,
     )
 
 
 def build_compact_display(train: dict) -> Text:
     """Build a single-line compact display for the train status."""
     return _display_build_compact_display(train, last_fetch_time=_cache.last_fetch_time)
+
+
+def _apply_main_title(panel: Panel) -> None:
+    """Add the main 'Amtrak Status' title and status subtitle to a panel."""
+    _display_apply_main_title(
+        panel,
+        last_fetch_time=_cache.last_fetch_time,
+        last_error=_cache.last_error,
+        refresh_interval=_config.refresh_interval,
+    )
+
+
+def _find_station_name(train: dict, station_code: str) -> str:
+    """Look up a station's display name from train data, falling back to the code."""
+    for s in train.get("stations", []):
+        if s.get("code", "").upper() == station_code.upper():
+            return s.get("name", station_code)
+    return station_code
+
+
+def _build_partial_connection_panel(
+    active_train: dict,
+    active_num: str,
+    missing_num: str,
+    connection_station: str,
+    active_is_arriving: bool,
+) -> Panel:
+    """Build a simplified connection panel when only one train has data.
+
+    If active_is_arriving is True, the active train is arriving at the connection
+    and the missing train is the departure. Otherwise, the active train is the
+    departure and the missing train was the arrival.
+    """
+    content = Table.grid(padding=(0, 2))
+    content.add_column(justify="left")
+
+    if active_is_arriving:
+        # Active train is arriving at connection; missing train departs later
+        _, _, arr, _ = get_station_times(active_train, connection_station)
+        sch_arr, _, _, _ = get_station_times(active_train, connection_station)
+        arrival_time = arr or sch_arr
+        arr_str = format_time(arrival_time) if arrival_time else "—"
+
+        status = get_station_status(active_train, connection_station)
+        if status == "Departed":
+            status_text, status_style = "✓ Arrived", "green"
+        elif status == "Station":
+            status_text, status_style = "● At station", "cyan"
+        else:
+            status_text, status_style = "◯ En route", "yellow"
+
+        route_name = active_train.get("routeName", f"Train #{active_num}")
+        content.add_row(Text(f"{route_name} arrives: {arr_str}", style=status_style))
+        content.add_row(Text(f"Status: {status_text}", style=status_style))
+        content.add_row(Text(""))
+        content.add_row(Text(f"Train #{missing_num} departure time will show", style="dim"))
+        content.add_row(Text("once that train's data is available.", style="dim"))
+    else:
+        # Active train is the departure; missing train data unavailable
+        content.add_row(Text(f"Train #{missing_num} data not available", style="yellow"))
+        content.add_row(Text(""))
+
+        _, sch_dep, _, dep = get_station_times(active_train, connection_station)
+        depart_time = dep or sch_dep
+        dep_str = format_time(depart_time) if depart_time else "—"
+
+        route_name = active_train.get("routeName", f"Train #{active_num}")
+        content.add_row(Text(f"{route_name} departs: {dep_str}"))
+
+    station_name = _find_station_name(active_train, connection_station)
+
+    return Panel(
+        content,
+        title=f"[bold yellow]🔗 Connection at {station_name} ({connection_station})[/]",
+        border_style="yellow",
+    )
 
 
 def build_multi_train_display(train_numbers: list[str], connection_station: str, show_all: bool = False) -> Layout:
@@ -178,10 +228,10 @@ def build_multi_train_display(train_numbers: list[str], connection_station: str,
         error_content.add_row(Text(""))
         error_content.add_row(Text("Both trains need to be active for connection tracking.", style="dim"))
         error_content.add_row(Text("Try again once at least one train has departed.", style="dim"))
-        
+
         layout.update(Panel(error_content, title="[bold yellow]Waiting for Train Data[/]", border_style="yellow"))
         return layout
-    
+
     # Build layout - adapt based on what data we have
     if train1_valid and train2_valid:
         # Both trains active - full connection view
@@ -191,27 +241,27 @@ def build_multi_train_display(train_numbers: list[str], connection_station: str,
             Layout(name="train2_header", size=6),
             Layout(name="stations", ratio=1),
         )
-        
-        train1_panel = build_compact_train_header(train1_data)
+
+        train1_panel = _display_build_compact_train_header(train1_data)
         _apply_main_title(train1_panel)
         layout["train1_header"].update(train1_panel)
         layout["connection"].update(build_connection_panel(train1_data, train2_data, connection_station))
-        layout["train2_header"].update(build_compact_train_header(train2_data))
-        
+        layout["train2_header"].update(_display_build_compact_train_header(train2_data))
+
         # Show stations for the train that's currently active/relevant
         train1_at_connection = get_station_status(train1_data, connection_station) in ("Departed", "Station")
-        
+
         if train1_at_connection:
             active_train = train2_data
             active_label = f"#{train2_num}"
         else:
             active_train = train1_data
             active_label = f"#{train1_num}"
-        
+
         stations_panel = build_stations_table(active_train, focus=not show_all)
         stations_panel.title = f"[bold]Stations - Train {active_label}[/] [dim](green=actual, cyan=estimated)[/]"
         layout["stations"].update(stations_panel)
-        
+
     elif train1_valid:
         # Only train 1 is active - show it with predeparture notice for train 2
         layout.split(
@@ -220,57 +270,19 @@ def build_multi_train_display(train_numbers: list[str], connection_station: str,
             Layout(name="train2_header", size=5),
             Layout(name="stations", ratio=1),
         )
-        
-        train1_panel = build_compact_train_header(train1_data)
+
+        train1_panel = _display_build_compact_train_header(train1_data)
         _apply_main_title(train1_panel)
         layout["train1_header"].update(train1_panel)
         layout["train2_header"].update(build_predeparture_header(train2_num))
-        
-        # Show a simplified connection panel
-        connection_content = Table.grid(padding=(0, 2))
-        connection_content.add_column(justify="left")
-        
-        # Get train 1's arrival at connection
-        _, _, arr1, _ = get_station_times(train1_data, connection_station)
-        sch_arr1, _, _, _ = get_station_times(train1_data, connection_station)
-        train1_arrives = arr1 or sch_arr1
-        arr_str = format_time(train1_arrives) if train1_arrives else "—"
-        
-        train1_status = get_station_status(train1_data, connection_station)
-        if train1_status == "Departed":
-            status_text = "✓ Arrived"
-            status_style = "green"
-        elif train1_status == "Station":
-            status_text = "● At station"
-            status_style = "cyan"
-        else:
-            status_text = "◯ En route"
-            status_style = "yellow"
-        
-        route_name = train1_data.get("routeName", f"Train #{train1_num}")
-        connection_content.add_row(Text(f"{route_name} arrives: {arr_str}", style=status_style))
-        connection_content.add_row(Text(f"Status: {status_text}", style=status_style))
-        connection_content.add_row(Text(""))
-        connection_content.add_row(Text(f"Train #{train2_num} departure time will show", style="dim"))
-        connection_content.add_row(Text("once that train's data is available.", style="dim"))
-        
-        # Get station name
-        station_name = connection_station
-        for s in train1_data.get("stations", []):
-            if s.get("code", "").upper() == connection_station.upper():
-                station_name = s.get("name", connection_station)
-                break
-        
-        layout["connection"].update(Panel(
-            connection_content,
-            title=f"[bold yellow]🔗 Connection at {station_name} ({connection_station})[/]",
-            border_style="yellow"
-        ))
-        
+        layout["connection"].update(
+            _build_partial_connection_panel(train1_data, train1_num, train2_num, connection_station, active_is_arriving=True)
+        )
+
         stations_panel = build_stations_table(train1_data, focus=not show_all)
         stations_panel.title = f"[bold]Stations - Train #{train1_num}[/] [dim](green=actual, cyan=estimated)[/]"
         layout["stations"].update(stations_panel)
-        
+
     else:
         # Only train 2 is active (unusual case - train 1 finished or not found)
         layout.split(
@@ -279,37 +291,15 @@ def build_multi_train_display(train_numbers: list[str], connection_station: str,
             Layout(name="train2_header", size=6),
             Layout(name="stations", ratio=1),
         )
-        
+
         train1_panel = build_predeparture_header(train1_num)
         _apply_main_title(train1_panel)
         layout["train1_header"].update(train1_panel)
-        layout["train2_header"].update(build_compact_train_header(train2_data))
-        
-        # Simplified connection panel
-        connection_content = Table.grid(padding=(0, 2))
-        connection_content.add_column(justify="left")
-        connection_content.add_row(Text(f"Train #{train1_num} data not available", style="yellow"))
-        connection_content.add_row(Text(""))
-        
-        _, sch_dep2, _, dep2 = get_station_times(train2_data, connection_station)
-        train2_departs = dep2 or sch_dep2
-        dep_str = format_time(train2_departs) if train2_departs else "—"
-        
-        route_name = train2_data.get("routeName", f"Train #{train2_num}")
-        connection_content.add_row(Text(f"{route_name} departs: {dep_str}"))
-        
-        station_name = connection_station
-        for s in train2_data.get("stations", []):
-            if s.get("code", "").upper() == connection_station.upper():
-                station_name = s.get("name", connection_station)
-                break
-        
-        layout["connection"].update(Panel(
-            connection_content,
-            title=f"[bold yellow]🔗 Connection at {station_name} ({connection_station})[/]",
-            border_style="yellow"
-        ))
-        
+        layout["train2_header"].update(_display_build_compact_train_header(train2_data))
+        layout["connection"].update(
+            _build_partial_connection_panel(train2_data, train2_num, train1_num, connection_station, active_is_arriving=False)
+        )
+
         stations_panel = build_stations_table(train2_data, focus=not show_all)
         stations_panel.title = f"[bold]Stations - Train #{train2_num}[/] [dim](green=actual, cyan=estimated)[/]"
         layout["stations"].update(stations_panel)
@@ -354,8 +344,8 @@ def select_connection_station(console: Console, overlaps: list[str], train1: dic
 def build_display(train_number: str, show_all: bool = False) -> Layout | Text:
     """Build the full TUI display or compact display."""
     train_data = fetch_train_data(train_number)
-    
-    if COMPACT_MODE:
+
+    if _config.compact_mode:
         if train_data is None:
             return Text(f"🚂 Train #{train_number} not found", style="yellow")
         if "error" in train_data:
@@ -470,15 +460,13 @@ CHI (Chicago), etc. Use --all to see all station codes on a route.
     return parser
 
 
-def _apply_args_to_globals(args) -> None:
-    """Apply parsed CLI arguments to module-level config."""
-    global REFRESH_INTERVAL, COMPACT_MODE, STATION_FROM, STATION_TO, FOCUS_CURRENT
-
-    REFRESH_INTERVAL = args.refresh
-    COMPACT_MODE = args.compact
-    STATION_FROM = args.from_station
-    STATION_TO = args.to_station
-    FOCUS_CURRENT = not args.no_focus and not getattr(args, 'all', False)
+def _apply_args_to_config(args) -> None:
+    """Apply parsed CLI arguments to the module-level Config object."""
+    _config.refresh_interval = args.refresh
+    _config.compact_mode = args.compact
+    _config.station_from = args.from_station
+    _config.station_to = args.to_station
+    _config.focus_current = not args.no_focus and not getattr(args, 'all', False)
 
     _notify_state.notify_all = args.notify_all
     if args.notify_at:
@@ -658,14 +646,14 @@ def _run_single_train(console, train_number, args):
             check_and_notify(_cache.last_successful_data)
         return
 
-    if COMPACT_MODE:
+    if _config.compact_mode:
         result = build_display(train_number, show_all=show_all)
         console.print(result)
         if _cache.last_successful_data:
             check_and_notify(_cache.last_successful_data)
         try:
             while True:
-                sleep(REFRESH_INTERVAL)
+                sleep(_config.refresh_interval)
                 console.clear()
                 console.print(build_display(train_number, show_all=show_all))
                 if _cache.last_successful_data:
@@ -685,7 +673,7 @@ def _run_single_train(console, train_number, args):
                 check_and_notify(_cache.last_successful_data)
 
             while True:
-                sleep(REFRESH_INTERVAL)
+                sleep(_config.refresh_interval)
                 live.update(build_display(train_number, show_all=show_all))
                 if _cache.last_successful_data:
                     check_and_notify(_cache.last_successful_data)
@@ -705,12 +693,12 @@ def _run_multi_train(console, train_numbers, args):
                 check_and_notify(_cache.per_train[num]["data"])
 
     if args.once:
-        result = build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=show_all)
+        result = build_multi_train_display(train_numbers[:2], _config.connection_station, show_all=show_all)
         console.print(result)
         _check_notifications()
         return
 
-    if COMPACT_MODE:
+    if _config.compact_mode:
         console.print("[yellow]Compact mode with connections - showing basic info[/]")
         try:
             while True:
@@ -722,14 +710,14 @@ def _run_multi_train(console, train_numbers, args):
                     else:
                         console.print(Text(f"🚂 Train #{num}: Error or not found", style="red"))
                 _check_notifications()
-                sleep(REFRESH_INTERVAL)
+                sleep(_config.refresh_interval)
         except KeyboardInterrupt:
             pass
         return
 
     try:
         with Live(
-            build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=show_all),
+            build_multi_train_display(train_numbers[:2], _config.connection_station, show_all=show_all),
             console=console,
             refresh_per_second=1,
             screen=True
@@ -737,8 +725,8 @@ def _run_multi_train(console, train_numbers, args):
             _check_notifications()
 
             while True:
-                sleep(REFRESH_INTERVAL)
-                live.update(build_multi_train_display(train_numbers[:2], CONNECTION_STATION, show_all=show_all))
+                sleep(_config.refresh_interval)
+                live.update(build_multi_train_display(train_numbers[:2], _config.connection_station, show_all=show_all))
                 _check_notifications()
     except KeyboardInterrupt:
         console.print("\n[dim]Tracking stopped.[/]")
@@ -747,18 +735,16 @@ def _run_multi_train(console, train_numbers, args):
 
 def main():
     """CLI entry point."""
-    global CONNECTION_STATION
-
     args = _build_arg_parser().parse_args()
-    _apply_args_to_globals(args)
+    _apply_args_to_config(args)
 
     console = Console()
     train_numbers = args.train_numbers
     is_multi_train = len(train_numbers) >= 2
 
     if is_multi_train:
-        CONNECTION_STATION = args.connection.upper() if args.connection else None
-        CONNECTION_STATION = _setup_connection(console, train_numbers, CONNECTION_STATION)
+        _config.connection_station = args.connection.upper() if args.connection else None
+        _config.connection_station = _setup_connection(console, train_numbers, _config.connection_station)
 
     # Show notification status if enabled
     if _notify_state.stations or _notify_state.notify_all:

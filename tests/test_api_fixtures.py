@@ -467,7 +467,7 @@ class TestFixtureFullPipeline:
 
     @patch("amtrak_status.tracker.fetch_train_data")
     def test_midjourney_compact_display(self, mock_fetch):
-        tracker.COMPACT_MODE = True
+        tracker._config.compact_mode = True
         fixture = load_fixture("train_active_midjourney.json")
         mock_fetch.return_value = fixture["42"][0]
 

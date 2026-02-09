@@ -64,8 +64,8 @@ class TestRenderedStationTable:
         assert "✗" in text
 
     def test_filter_shows_omitted_messages(self):
-        tracker.STATION_FROM = "GBG"
-        tracker.STATION_TO = "PHL"
+        tracker._config.station_from = "GBG"
+        tracker._config.station_to = "PHL"
         train = journey_at_phase("mid")
         panel = tracker.build_stations_table(train)
         text = render_to_text(panel)
@@ -608,7 +608,7 @@ class TestErrorAndRecovery:
 
     @patch("amtrak_status.tracker.fetch_train_data")
     def test_compact_error(self, mock_fetch):
-        tracker.COMPACT_MODE = True
+        tracker._config.compact_mode = True
         mock_fetch.return_value = {"error": "timeout"}
         result = tracker.build_display("42")
         text = result.plain
@@ -772,7 +772,7 @@ class TestFullBuildDisplay:
     @patch("amtrak_status.tracker.fetch_train_data")
     def test_compact_full_display(self, mock_fetch):
         """Compact mode returns a single-line Text."""
-        tracker.COMPACT_MODE = True
+        tracker._config.compact_mode = True
         mock_fetch.return_value = journey_at_phase("mid")
         result = tracker.build_display("42")
 
@@ -785,8 +785,8 @@ class TestFullBuildDisplay:
     @patch("amtrak_status.tracker.fetch_train_data")
     def test_display_with_station_filter(self, mock_fetch):
         """--from/--to filter should restrict visible stations."""
-        tracker.STATION_FROM = "HBG"
-        tracker.STATION_TO = "NYP"
+        tracker._config.station_from = "HBG"
+        tracker._config.station_to = "NYP"
         mock_fetch.return_value = journey_at_phase("mid")
         result = tracker.build_display("42")
         text = render_to_text(result)

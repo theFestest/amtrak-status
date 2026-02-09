@@ -1096,8 +1096,8 @@ class TestBuildStationsTable:
         assert isinstance(result, Panel)
 
     def test_with_station_filter(self):
-        tracker.STATION_FROM = "GBG"
-        tracker.STATION_TO = "PHL"
+        tracker._config.station_from = "GBG"
+        tracker._config.station_to = "PHL"
         train = make_train(stations=sample_journey_stations())
         result = tracker.build_stations_table(train)
         assert isinstance(result, Panel)
@@ -1124,7 +1124,7 @@ class TestBuildStationsTable:
         assert isinstance(result, Panel)
 
     def test_no_focus_mode(self):
-        tracker.FOCUS_CURRENT = False
+        tracker._config.focus_current = False
         train = make_train(stations=sample_journey_stations())
         result = tracker.build_stations_table(train, focus=False)
         assert isinstance(result, Panel)
@@ -1206,21 +1206,21 @@ class TestBuildDisplay:
 
     @patch("amtrak_status.tracker.fetch_train_data")
     def test_compact_mode(self, mock_fetch):
-        tracker.COMPACT_MODE = True
+        tracker._config.compact_mode = True
         mock_fetch.return_value = make_train(stations=sample_journey_stations())
         result = tracker.build_display("42")
         assert isinstance(result, Text)
 
     @patch("amtrak_status.tracker.fetch_train_data")
     def test_compact_not_found(self, mock_fetch):
-        tracker.COMPACT_MODE = True
+        tracker._config.compact_mode = True
         mock_fetch.return_value = None
         result = tracker.build_display("42")
         assert isinstance(result, Text)
 
     @patch("amtrak_status.tracker.fetch_train_data")
     def test_compact_error(self, mock_fetch):
-        tracker.COMPACT_MODE = True
+        tracker._config.compact_mode = True
         mock_fetch.return_value = {"error": "fail"}
         result = tracker.build_display("42")
         assert isinstance(result, Text)
@@ -1328,7 +1328,7 @@ class TestMainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "--compact", "--once"]):
             tracker.main()
 
-        assert tracker.COMPACT_MODE is True
+        assert tracker._config.compact_mode is True
 
     @patch("amtrak_status.tracker.Live")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -1341,8 +1341,8 @@ class TestMainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "--from", "PGH", "--to", "NYP", "--once"]):
             tracker.main()
 
-        assert tracker.STATION_FROM == "PGH"
-        assert tracker.STATION_TO == "NYP"
+        assert tracker._config.station_from == "PGH"
+        assert tracker._config.station_to == "NYP"
 
     @patch("amtrak_status.tracker.Live")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -1381,7 +1381,7 @@ class TestMainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "-r", "60", "--once"]):
             tracker.main()
 
-        assert tracker.REFRESH_INTERVAL == 60
+        assert tracker._config.refresh_interval == 60
 
     @patch("amtrak_status.tracker.Live")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -1394,7 +1394,7 @@ class TestMainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "--all", "--once"]):
             tracker.main()
 
-        assert tracker.FOCUS_CURRENT is False
+        assert tracker._config.focus_current is False
 
     @patch("amtrak_status.tracker.Live")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -1407,7 +1407,7 @@ class TestMainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "--no-focus", "--once"]):
             tracker.main()
 
-        assert tracker.FOCUS_CURRENT is False
+        assert tracker._config.focus_current is False
 
 
 # =============================================================================
@@ -1517,7 +1517,7 @@ class TestMultiTrainArgParsing:
         with patch("sys.argv", ["amtrak-status", "42", "178", "--connection", "PHL", "--once"]):
             tracker.main()
 
-        assert tracker.CONNECTION_STATION == "PHL"
+        assert tracker._config.connection_station == "PHL"
 
     @patch("amtrak_status.tracker.Live")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -1536,7 +1536,7 @@ class TestMultiTrainArgParsing:
         ):
             tracker.main()
 
-        assert tracker.CONNECTION_STATION == "PHL"
+        assert tracker._config.connection_station == "PHL"
 
 
 class TestSelectConnectionStation:
@@ -1883,8 +1883,8 @@ class TestRenderedContentDetails:
 
     def test_station_filter_hides_omitted_and_shows_indicators(self):
         """Station filter should show omission indicators and hide filtered-out stations."""
-        tracker.STATION_FROM = "GBG"
-        tracker.STATION_TO = "PHL"
+        tracker._config.station_from = "GBG"
+        tracker._config.station_to = "PHL"
         train = journey_at_phase("mid")
         text = render_to_text(tracker.build_stations_table(train))
         assert "earlier stops omitted" in text
@@ -2340,7 +2340,7 @@ class TestMainMultiTrainOrchestration:
         with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
             tracker.main()
 
-        assert tracker.CONNECTION_STATION == "PHL"
+        assert tracker._config.connection_station == "PHL"
 
     @patch("amtrak_status.tracker.Console")
     @patch("amtrak_status.tracker.fetch_train_data")
@@ -2383,7 +2383,7 @@ class TestMainMultiTrainOrchestration:
         with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
             tracker.main()
 
-        assert tracker.CONNECTION_STATION == "PHL"
+        assert tracker._config.connection_station == "PHL"
 
     @patch("amtrak_status.tracker.Prompt.ask", return_value="PHL")
     @patch("amtrak_status.tracker.Console")
@@ -2407,7 +2407,7 @@ class TestMainMultiTrainOrchestration:
         with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
             tracker.main()
 
-        assert tracker.CONNECTION_STATION == "PHL"
+        assert tracker._config.connection_station == "PHL"
         mock_fetch_station.assert_called_with("PHL")
 
     @patch("amtrak_status.tracker.Prompt.ask", return_value="PHL")
@@ -2431,4 +2431,4 @@ class TestMainMultiTrainOrchestration:
         with patch("sys.argv", ["amtrak-status", "42", "178", "--once"]):
             tracker.main()
 
-        assert tracker.CONNECTION_STATION == "PHL"
+        assert tracker._config.connection_station == "PHL"
