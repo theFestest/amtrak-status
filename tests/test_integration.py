@@ -1,16 +1,15 @@
 """Integration tests for amtrak-status: rendered output verification and lifecycle tests."""
 
-from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock, call
+from datetime import timedelta
+from unittest.mock import patch, MagicMock
 
-import pytest
 from rich.text import Text
 
 import amtrak_status.tracker as tracker
 
 # Shared helpers from conftest (imported explicitly for use in test code)
 from conftest import (
-    make_station, make_train, ts_ms, FIXED_NOW,
+    make_station, make_train, to_iso, FIXED_NOW,
     render_to_text, journey_at_phase,
 )
 
@@ -297,19 +296,19 @@ class TestRenderedConnectionPanel:
             train_num="42", route_name="Pennsylvanian",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(now - timedelta(hours=3))),
+                             sch_dep=to_iso(now - timedelta(hours=3))),
                 make_station(code="PHL", name="Philadelphia", status="Enroute",
-                             sch_arr=ts_ms(now + timedelta(minutes=30)),
-                             arr=ts_ms(now + timedelta(minutes=30))),
+                             sch_arr=to_iso(now + timedelta(minutes=30)),
+                             arr=to_iso(now + timedelta(minutes=30))),
             ],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[
                 make_station(code="PHL", name="Philadelphia", status="",
-                             sch_dep=ts_ms(now + timedelta(minutes=30 + layover_minutes))),
+                             sch_dep=to_iso(now + timedelta(minutes=30 + layover_minutes))),
                 make_station(code="HBG", name="Harrisburg", status="",
-                             sch_arr=ts_ms(now + timedelta(hours=3))),
+                             sch_arr=to_iso(now + timedelta(hours=3))),
             ],
         )
         return train1, train2
@@ -362,15 +361,15 @@ class TestRenderedConnectionPanel:
             train_num="42", route_name="Pennsylvanian",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="Enroute",
-                sch_arr=ts_ms(now + timedelta(hours=1)),
-                arr=ts_ms(now + timedelta(hours=1)),
+                sch_arr=to_iso(now + timedelta(hours=1)),
+                arr=to_iso(now + timedelta(hours=1)),
             )],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="",
-                sch_dep=ts_ms(now + timedelta(minutes=20)),
+                sch_dep=to_iso(now + timedelta(minutes=20)),
             )],
         )
         panel = tracker.build_connection_panel(train1, train2, "PHL")
@@ -483,22 +482,22 @@ class TestMultiTrainLifecycle:
             train_num="42", route_name="Pennsylvanian",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(now - timedelta(hours=3)),
-                             dep=ts_ms(now - timedelta(hours=3))),
+                             sch_dep=to_iso(now - timedelta(hours=3)),
+                             dep=to_iso(now - timedelta(hours=3))),
                 make_station(code="PHL", name="Philadelphia", status="Enroute",
-                             sch_arr=ts_ms(now + timedelta(minutes=30)),
-                             arr=ts_ms(now + timedelta(minutes=30 + train1_delay_mins))),
+                             sch_arr=to_iso(now + timedelta(minutes=30)),
+                             arr=to_iso(now + timedelta(minutes=30 + train1_delay_mins))),
                 make_station(code="NYP", name="New York Penn", status="",
-                             sch_arr=ts_ms(now + timedelta(hours=3))),
+                             sch_arr=to_iso(now + timedelta(hours=3))),
             ],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[
                 make_station(code="PHL", name="Philadelphia", status="",
-                             sch_dep=ts_ms(now + timedelta(hours=2))),
+                             sch_dep=to_iso(now + timedelta(hours=2))),
                 make_station(code="HBG", name="Harrisburg", status="",
-                             sch_arr=ts_ms(now + timedelta(hours=4))),
+                             sch_arr=to_iso(now + timedelta(hours=4))),
             ],
         )
         return train1, train2
@@ -700,19 +699,19 @@ class TestNotificationIntegration:
             train_num="42", route_name="Pennsylvanian",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(now - timedelta(hours=3))),
+                             sch_dep=to_iso(now - timedelta(hours=3))),
                 make_station(code="PHL", name="Philadelphia", status="Station",
-                             sch_arr=ts_ms(now), arr=ts_ms(now),
-                             sch_dep=ts_ms(now + timedelta(minutes=5))),
+                             sch_arr=to_iso(now), arr=to_iso(now),
+                             sch_dep=to_iso(now + timedelta(minutes=5))),
             ],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[
                 make_station(code="PHL", name="Philadelphia", status="",
-                             sch_dep=ts_ms(now + timedelta(hours=1))),
+                             sch_dep=to_iso(now + timedelta(hours=1))),
                 make_station(code="HBG", name="Harrisburg", status="",
-                             sch_arr=ts_ms(now + timedelta(hours=3))),
+                             sch_arr=to_iso(now + timedelta(hours=3))),
             ],
         )
 
@@ -833,7 +832,7 @@ class TestRenderedCompactTrainHeader:
         now = FIXED_NOW
         train = make_train(
             train_state="Predeparture",
-            stations=[make_station(code="PHL", sch_dep=ts_ms(now))],
+            stations=[make_station(code="PHL", sch_dep=to_iso(now))],
         )
         train["_predeparture"] = True
         panel = tracker.build_compact_train_header(train)
@@ -877,11 +876,11 @@ class TestMultiTrainTitlePresence:
             train_num="42", route_name="Pennsylvanian",
             stations=[
                 make_station(code="PGH", status="Departed",
-                             sch_dep=ts_ms(now - timedelta(hours=3)),
-                             dep=ts_ms(now - timedelta(hours=3))),
+                             sch_dep=to_iso(now - timedelta(hours=3)),
+                             dep=to_iso(now - timedelta(hours=3))),
                 make_station(code="PHL", status="Enroute",
-                             sch_arr=ts_ms(now + timedelta(hours=1)),
-                             arr=ts_ms(now + timedelta(hours=1))),
+                             sch_arr=to_iso(now + timedelta(hours=1)),
+                             arr=to_iso(now + timedelta(hours=1))),
             ],
         )
         mock_fetch.side_effect = [train1, None]
@@ -900,9 +899,9 @@ class TestMultiTrainTitlePresence:
             train_num="178", route_name="Keystone",
             stations=[
                 make_station(code="PHL", status="",
-                             sch_dep=ts_ms(now + timedelta(hours=2))),
+                             sch_dep=to_iso(now + timedelta(hours=2))),
                 make_station(code="HBG", status="",
-                             sch_arr=ts_ms(now + timedelta(hours=4))),
+                             sch_arr=to_iso(now + timedelta(hours=4))),
             ],
         )
         mock_fetch.side_effect = [None, train2]
@@ -928,16 +927,16 @@ class TestConnectionPanelStatusTransitions:
             train_num="42", route_name="Pennsylvanian",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="Departed",
-                sch_arr=ts_ms(now - timedelta(minutes=30)),
-                arr=ts_ms(now - timedelta(minutes=30)),
-                dep=ts_ms(now - timedelta(minutes=25)),
+                sch_arr=to_iso(now - timedelta(minutes=30)),
+                arr=to_iso(now - timedelta(minutes=30)),
+                dep=to_iso(now - timedelta(minutes=25)),
             )],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="",
-                sch_dep=ts_ms(now + timedelta(minutes=60)),
+                sch_dep=to_iso(now + timedelta(minutes=60)),
             )],
         )
         panel = tracker.build_connection_panel(train1, train2, "PHL")
@@ -950,15 +949,15 @@ class TestConnectionPanelStatusTransitions:
             train_num="42", route_name="Pennsylvanian",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="Station",
-                sch_arr=ts_ms(now - timedelta(minutes=5)),
-                arr=ts_ms(now - timedelta(minutes=3)),
+                sch_arr=to_iso(now - timedelta(minutes=5)),
+                arr=to_iso(now - timedelta(minutes=3)),
             )],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="",
-                sch_dep=ts_ms(now + timedelta(minutes=60)),
+                sch_dep=to_iso(now + timedelta(minutes=60)),
             )],
         )
         panel = tracker.build_connection_panel(train1, train2, "PHL")
@@ -971,15 +970,15 @@ class TestConnectionPanelStatusTransitions:
             train_num="42", route_name="Pennsylvanian",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="Departed",
-                sch_arr=ts_ms(now - timedelta(hours=1)),
-                arr=ts_ms(now - timedelta(hours=1)),
+                sch_arr=to_iso(now - timedelta(hours=1)),
+                arr=to_iso(now - timedelta(hours=1)),
             )],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="Station",
-                sch_dep=ts_ms(now + timedelta(minutes=5)),
+                sch_dep=to_iso(now + timedelta(minutes=5)),
             )],
         )
         panel = tracker.build_connection_panel(train1, train2, "PHL")
@@ -992,16 +991,16 @@ class TestConnectionPanelStatusTransitions:
             train_num="42", route_name="Pennsylvanian",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="Enroute",
-                sch_arr=ts_ms(now + timedelta(minutes=30)),
-                arr=ts_ms(now + timedelta(minutes=30)),
+                sch_arr=to_iso(now + timedelta(minutes=30)),
+                arr=to_iso(now + timedelta(minutes=30)),
             )],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[make_station(
                 code="PHL", name="Philadelphia", status="Departed",
-                sch_dep=ts_ms(now - timedelta(minutes=10)),
-                dep=ts_ms(now - timedelta(minutes=10)),
+                sch_dep=to_iso(now - timedelta(minutes=10)),
+                dep=to_iso(now - timedelta(minutes=10)),
             )],
         )
         panel = tracker.build_connection_panel(train1, train2, "PHL")
@@ -1016,19 +1015,19 @@ class TestLayoverBoundary:
             train_num="42", route_name="Pennsylvanian",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(now - timedelta(hours=3))),
+                             sch_dep=to_iso(now - timedelta(hours=3))),
                 make_station(code="PHL", name="Philadelphia", status="Enroute",
-                             sch_arr=ts_ms(now + timedelta(minutes=30)),
-                             arr=ts_ms(now + timedelta(minutes=30))),
+                             sch_arr=to_iso(now + timedelta(minutes=30)),
+                             arr=to_iso(now + timedelta(minutes=30))),
             ],
         )
         train2 = make_train(
             train_num="178", route_name="Keystone",
             stations=[
                 make_station(code="PHL", name="Philadelphia", status="",
-                             sch_dep=ts_ms(now + timedelta(minutes=30 + layover_minutes))),
+                             sch_dep=to_iso(now + timedelta(minutes=30 + layover_minutes))),
                 make_station(code="HBG", name="Harrisburg", status="",
-                             sch_arr=ts_ms(now + timedelta(hours=3))),
+                             sch_arr=to_iso(now + timedelta(hours=3))),
             ],
         )
         return train1, train2
@@ -1073,21 +1072,21 @@ class TestCompletedJourney:
             heading="", dest_name="New York Penn",
             stations=[
                 make_station(code="PGH", name="Pittsburgh", status="Departed",
-                             sch_dep=ts_ms(base),
-                             dep=ts_ms(base)),
+                             sch_dep=to_iso(base),
+                             dep=to_iso(base)),
                 make_station(code="GBG", name="Greensburg", status="Departed",
-                             sch_arr=ts_ms(base + timedelta(hours=1)),
-                             sch_dep=ts_ms(base + timedelta(hours=1, minutes=2)),
-                             arr=ts_ms(base + timedelta(hours=1)),
-                             dep=ts_ms(base + timedelta(hours=1, minutes=2))),
+                             sch_arr=to_iso(base + timedelta(hours=1)),
+                             sch_dep=to_iso(base + timedelta(hours=1, minutes=2)),
+                             arr=to_iso(base + timedelta(hours=1)),
+                             dep=to_iso(base + timedelta(hours=1, minutes=2))),
                 make_station(code="HBG", name="Harrisburg", status="Departed",
-                             sch_arr=ts_ms(base + timedelta(hours=3)),
-                             sch_dep=ts_ms(base + timedelta(hours=3, minutes=5)),
-                             arr=ts_ms(base + timedelta(hours=3)),
-                             dep=ts_ms(base + timedelta(hours=3, minutes=5))),
+                             sch_arr=to_iso(base + timedelta(hours=3)),
+                             sch_dep=to_iso(base + timedelta(hours=3, minutes=5)),
+                             arr=to_iso(base + timedelta(hours=3)),
+                             dep=to_iso(base + timedelta(hours=3, minutes=5))),
                 make_station(code="NYP", name="New York Penn", status="Station",
-                             sch_arr=ts_ms(base + timedelta(hours=5, minutes=30)),
-                             arr=ts_ms(base + timedelta(hours=5, minutes=30))),
+                             sch_arr=to_iso(base + timedelta(hours=5, minutes=30)),
+                             arr=to_iso(base + timedelta(hours=5, minutes=30))),
             ],
         )
         panel = tracker.build_stations_table(train)
@@ -1109,9 +1108,9 @@ class TestPlatformDisplay:
     def test_platform_shown_for_enroute_station(self):
         train = make_train(stations=[
             make_station(code="PGH", name="Pittsburgh", status="Departed",
-                         sch_dep=100, dep=101),
+                         sch_dep="2025-03-15T10:00:00", dep="2025-03-15T10:01:00"),
             make_station(code="HBG", name="Harrisburg", status="Enroute",
-                         sch_arr=200, sch_dep=300, arr=250, platform="3"),
+                         sch_arr="2025-03-15T11:00:00", sch_dep="2025-03-15T12:00:00", arr="2025-03-15T11:30:00", platform="3"),
         ])
         panel = tracker.build_stations_table(train)
         text = render_to_text(panel)
