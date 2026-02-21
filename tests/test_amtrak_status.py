@@ -1472,7 +1472,7 @@ class TestCacheExpiry:
 
 
 class TestFetchTrainDataCachedErrorPath:
-    @patch("amtrak_status.tracker.fetch_train_data")
+    @patch("amtrak_status.api.fetch_train_data")
     def test_cached_returns_cache_on_error_result(self, mock_fetch):
         """When fetch returns an error dict but cache is fresh, use cache."""
         cached = {"trainNum": "42", "stations": [], "routeName": "Pennsylvanian"}
