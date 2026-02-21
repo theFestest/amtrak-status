@@ -6,10 +6,14 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.branch.outputs.name }}
+      pr-number: ${{ steps.pr.outputs.number }}
     steps:
     - uses: actions/checkout@v6
       with:
@@ -17,6 +21,12 @@ jobs:
     - name: Extract version from tag
       id: version
       run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+    - name: Create release branch
+      id: branch
+      run: |
+        BRANCH="release/${{ github.event.release.tag_name }}"
+        echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+        git checkout -b "$BRANCH"
     - name: Update pyproject.toml version
       run: sed -i 's/^version = ".*"/version = "${{ steps.version.outputs.version }}"/' pyproject.toml
     - name: Create CHANGELOG.md if it doesn't exist
@@ -26,12 +36,24 @@ jobs:
       with:
         latest-version: ${{ github.event.release.tag_name }}
         release-notes: ${{ github.event.release.body }}
-    - name: Commit updated files
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        branch: ${{ github.event.release.target_commitish }}
-        commit_message: "Release ${{ github.event.release.tag_name }}: update version and CHANGELOG"
-        file_pattern: "pyproject.toml CHANGELOG.md"
+    - name: Commit and push release branch
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add pyproject.toml CHANGELOG.md
+        git commit -m "Release ${{ github.event.release.tag_name }}: update version and CHANGELOG"
+        git push origin "release/${{ github.event.release.tag_name }}"
+    - name: Create pull request
+      id: pr
+      run: |
+        PR_URL=$(gh pr create \
+          --title "Release ${{ github.event.release.tag_name }}" \
+          --body "Automated version and changelog updates for ${{ github.event.release.tag_name }}." \
+          --base "${{ github.event.release.target_commitish }}" \
+          --head "release/${{ github.event.release.tag_name }}")
+        echo "number=$(echo "$PR_URL" | grep -o '[0-9]*$')" >> "$GITHUB_OUTPUT"
+      env:
+        GH_TOKEN: ${{ github.token }}
   test:
     runs-on: ubuntu-latest
     needs: [prepare-release]
@@ -41,7 +63,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
       with:
-        ref: ${{ github.event.release.target_commitish }}
+        ref: ${{ needs.prepare-release.outputs.branch }}
     - uses: astral-sh/setup-uv@v4
       with:
         enable-cache: true
@@ -50,11 +72,11 @@ jobs:
       run: uv run --python ${{ matrix.python-version }} pytest
   build:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [prepare-release, test]
     steps:
     - uses: actions/checkout@v6
       with:
-        ref: ${{ github.event.release.target_commitish }}
+        ref: ${{ needs.prepare-release.outputs.branch }}
     - uses: astral-sh/setup-uv@v4
       with:
         enable-cache: true
@@ -82,3 +104,12 @@ jobs:
         path: dist/
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
+  merge-release-pr:
+    runs-on: ubuntu-latest
+    needs: [prepare-release, publish]
+    steps:
+    - uses: actions/checkout@v6
+    - name: Merge pull request
+      run: gh pr merge ${{ needs.prepare-release.outputs.pr-number }} --squash --auto --delete-branch
+      env:
+        GH_TOKEN: ${{ github.token }}
