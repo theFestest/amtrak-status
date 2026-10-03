@@ -34,7 +34,7 @@ Enter connection station code [bold cyan](BOS)[/]: [dim]Fetching schedule from B
 [yellow]│[/] Northeast Regional departs: 9:17 AM                                                                                  [yellow]│[/]
 [yellow]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
 [cyan]╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮[/]
-[cyan]│[/] 🚂 Northeast Regional [dim]#171[/]                      [green]On Time[/]                                                              [cyan]│[/]
+[cyan]│[/] 🚂 Northeast Regional [dim]#171[/]                                                                                           [cyan]│[/]
 [cyan]│[/] Next: New Haven Union Station [dim]@ 11:36 AM[/] [dim red](+6m)[/]  [dim]79 mph[/]                                                               [cyan]│[/]
 [cyan]│[/] PVD [green]█████████[/][dim]░░░░░░[/] NHV [dim](35m)[/]                                                                                        [cyan]│[/]
 [cyan]│                                                                                                                      │[/]

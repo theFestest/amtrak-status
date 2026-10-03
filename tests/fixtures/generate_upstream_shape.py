@@ -42,7 +42,7 @@ def train(num, route, tid, stations, **kw):
         "eventCode": "", "eventTZ": "America/New_York", "eventName": "",
         "origCode": stations[0]["code"], "originTZ": "America/New_York", "origName": stations[0]["name"],
         "destCode": stations[-1]["code"], "destTZ": "America/New_York", "destName": stations[-1]["name"],
-        "trainState": "Active", "velocity": 0, "statusMsg": "On Time",
+        "trainState": "Active", "velocity": 0, "statusMsg": " ",
         "createdAt": D.format("07:00"), "updatedAt": D.format("10:58"), "lastValTS": D.format("10:58"),
         "objectID": 0, "provider": "Amtrak", "providerShort": "AMTK", "onlyOfTrainNum": True, "alerts": [],
     }
@@ -61,7 +61,7 @@ TRAIN_42 = train("42", "Pennsylvanian", "42-8", [
     stop("LNC", "Lancaster", "13:30", "13:32", "Enroute", arr="13:35"),
     stop("PHL", "Philadelphia 30th Street", "14:45", "14:55", "Enroute", arr="14:50"),
     stop("NYP", "New York Penn", "16:30", None, "Enroute", arr="16:35"),
-], heading="E", velocity=62.3, eventCode="ALT", eventName="Altoona", statusMsg="On Time")
+], heading="E", velocity=62.3, eventCode="ALT", eventName="Altoona")
 
 TRAIN_171 = train("171", "Northeast Regional", "171-8", [
     stop("BOS", "Boston South Station", None, "09:15", "Departed", dep="09:17"),
@@ -74,7 +74,7 @@ TRAIN_171 = train("171", "Northeast Regional", "171-8", [
     stop("WIL", "Wilmington", "15:55", "15:56", "Enroute", arr="15:57"),
     stop("BAL", "Baltimore Penn Station", "16:45", "16:47", "Enroute", arr="16:47"),
     stop("WAS", "Washington Union Station", "17:25", None, "Enroute", arr="17:25"),
-], heading="SW", velocity=79.0, eventCode="PVD", eventName="Providence", statusMsg="On Time")
+], heading="SW", velocity=79.0, eventCode="PVD", eventName="Providence")
 
 
 if __name__ == "__main__":

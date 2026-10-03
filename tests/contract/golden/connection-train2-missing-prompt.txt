@@ -25,7 +25,7 @@ Enter connection station code [bold cyan](PGH)[/]: [dim]Fetching schedule from P
 [yellow]No schedule found for train[/] [bold yellow]171[/] [yellow]at PHL[/]
 [green]✓ Connection set to PHL[/]
 [cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
-[cyan]│[/] 🚂 Pennsylvanian [dim]#42[/]               [green]On Time[/]                                                                           [cyan]│[/]
+[cyan]│[/] 🚂 Pennsylvanian [dim]#42[/]                                                                                                 [cyan]│[/]
 [cyan]│[/] Next: Huntingdon [dim]@ 11:20 AM[/] [dim red](+5m)[/]  [dim]62 mph[/]                                                                            [cyan]│[/]
 [cyan]│[/] ALT [green]████████[/][dim]░░░░░░░[/] HUN [dim](19m)[/]                                                                                        [cyan]│[/]
 [cyan]│                                                                                                                      │[/]

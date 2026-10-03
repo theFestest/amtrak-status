@@ -174,7 +174,7 @@
       "destName": "Washington Union Station",
       "trainState": "Active",
       "velocity": 79.0,
-      "statusMsg": "On Time",
+      "statusMsg": " ",
       "createdAt": "2026-02-08T07:00:00-05:00",
       "updatedAt": "2026-02-08T10:58:00-05:00",
       "lastValTS": "2026-02-08T10:58:00-05:00",

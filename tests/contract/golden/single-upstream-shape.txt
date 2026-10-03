@@ -6,7 +6,7 @@
 [cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
 [cyan]│[/] [bold white]🚂 Pennsylvanian[/] [bold dim white]#42 (42-8)[/]                                                                                          [cyan]│[/]
 [cyan]│[/] [bold white]Next: Huntingdon[/] [bold dim white]@ 11:20 AM[/] [bold dim red](+5m)[/]                                                                                    [cyan]│[/]
-[cyan]│[/] [bold white]Heading: E @ 62 mph[/]                              [green]On Time[/]                                                             [cyan]│[/]
+[cyan]│[/] [bold white]Heading: E @ 62 mph[/]                                                                                                  [cyan]│[/]
 [cyan]│[/] [bold white]Position: ALT[/] [bold green]███████████[/][bold dim white]░░░░░░░░░[/] [bold white]HUN[/] [bold dim white](20 min)[/]                                                                      [cyan]│[/]
 [cyan]│[/] [bold white]Destination: New York Penn[/]                                                                                           [cyan]│[/]
 [cyan]│                                                                                                                      │[/]

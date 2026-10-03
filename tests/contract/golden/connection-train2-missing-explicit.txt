@@ -8,7 +8,7 @@
 [yellow]No schedule found for train[/] [bold yellow]171[/]
 [green]✓ Connection station: PHL[/]
 [cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
-[cyan]│[/] 🚂 Pennsylvanian [dim]#42[/]               [green]On Time[/]                                                                           [cyan]│[/]
+[cyan]│[/] 🚂 Pennsylvanian [dim]#42[/]                                                                                                 [cyan]│[/]
 [cyan]│[/] Next: Huntingdon [dim]@ 11:20 AM[/] [dim red](+5m)[/]  [dim]62 mph[/]                                                                            [cyan]│[/]
 [cyan]│[/] ALT [green]████████[/][dim]░░░░░░░[/] HUN [dim](19m)[/]                                                                                        [cyan]│[/]
 [cyan]│                                                                                                                      │[/]
