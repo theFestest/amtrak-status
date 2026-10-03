@@ -453,6 +453,25 @@ def normalize(stdout: str) -> str:
     return "\n".join(collapsed) + "\n"
 
 
+def style_at(stdout: str, needle: str, on_line_with: str | None = None) -> str | None:
+    """The style (e.g. ``"bold red"``) of the first character of ``needle`` in the output.
+
+    ``on_line_with`` restricts the search to lines that also contain that text.
+    """
+    for line in Text.from_ansi(stdout).split("\n", allow_blank=True):
+        if on_line_with is not None and on_line_with not in line.plain:
+            continue
+        index = line.plain.find(needle)
+        if index < 0:
+            continue
+        style = Style.null()
+        for span in line.spans:
+            if span.start <= index < span.end:
+                style = style + (span.style if isinstance(span.style, Style) else Style.parse(span.style))
+        return _style_name(style)
+    return None
+
+
 def golden_document(argv: Iterable[str], result: RunResult, stdin: str = "") -> str:
     """Everything observable about a run: side effects first, then the screen."""
     header = [
