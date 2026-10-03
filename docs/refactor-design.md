@@ -10,7 +10,7 @@ contract test harness in [`tests/contract/`](../tests/contract/).
   module globals between those concerns. Six of the ~30 bugs found while preparing this design
   ([known-bugs.md](known-bugs.md): B01, B02, B07, B08, B18, B19) come directly from that shared
   state or from logic duplicated between views.
-* The existing suite has 89 % branch coverage but a mutation score of only ~50 %: about half of
+* The existing suite has 89 % branch coverage but a mutation score of only 47 %: more than half of
   all deliberate small code changes go undetected. A quarter of the tests patch
   `amtrak_status.tracker.*` internals, so they would break on *any* module split even when
   behaviour is preserved, which makes them unusable as a migration safety net.
@@ -68,7 +68,7 @@ Two new fixtures follow these rules (`train_42_upstream_shape.json`,
 |---|---|
 | Tests (before this PR) | 361 passing + 3 xfail |
 | Branch coverage of `tracker.py` | 89 % |
-| Mutation score (mutmut 3.8; 4,310 of 4,478 mutants evaluated) | **48.6 %** (2,096 killed, 2,214 survived) |
+| Mutation score (mutmut 3.8, all 4,478 mutants of `tracker.py`) | **47.4 %** (2,123 killed, 2,355 survived) |
 | Tests that patch `amtrak_status.tracker.*` | 88 of 335 class-based tests (170 `patch(...)` calls) |
 | Tests whose only assertions are `isinstance(...)` | 22 |
 | Direct reads/writes of module globals in tests | 76 |
@@ -89,15 +89,19 @@ Why the score is low even though coverage is high:
   tests assert facts about Python (`assert not []`), not about the code.
 * **Duplication.** Several scenarios are tested 2–3 times across files (predeparture panels,
   layover rendering, notification init).
+* **Hidden I/O.** `TestMultiTrainArgParsing::test_two_train_numbers_triggers_multi_mode` mocks
+  `fetch_train_data` but not `fetch_station_schedule`, so on every CI run it makes a **real HTTP
+  request** to the Amtraker API and sleeps for 2 real seconds. Three other `main()` tests sleep for
+  1 real second each. A socket guard during the full run flagged no contract tests.
 
-Mutation score by area (existing suite, first pass):
+Mutation score by area (existing suite):
 
 | Area | Functions | Score |
 |---|---|---|
 | Small pure helpers | `filter_stations` 97 %, `get_status_style` 91 %, `format_time` 89 %, `get_station_times` 87 %, `is_station_cancelled` 86 %, `parse_time` 83 % | high |
 | Domain calculations | `calculate_layover` 71 %, `calculate_position_between_stations` 71 %, `check_and_notify` 71 %, `calculate_progress` 61 % | medium |
 | Rendering | `build_stations_table` 33 %, `build_compact_train_header` 38 %, `build_multi_train_display` 46 %, `build_progress_bar` 47 %, `build_header` 55 % | low |
-| I/O and orchestration | `send_notification` 24 %, `select_connection_station` 30 %, `fetch_train_data_cached` 37 %, `fetch_train_data` 38 %, `main` 39 % | low |
+| I/O and orchestration | `send_notification` 24 %, `select_connection_station` 30 %, `fetch_train_data_cached` 37 %, `fetch_train_data` 38 %, `main` 34 % | low |
 
 Some survivors are equivalent mutants (e.g. changing the default of a `.get()` whose key is always
 present), but many are real gaps in exactly the code a refactor moves. Examples:
@@ -264,7 +268,7 @@ controls only these seams:
 | Seam | Mechanism | Survives refactor because… |
 |---|---|---|
 | entry point | `importlib.metadata.entry_points()["amtrak-status"]` | moving `main` only changes `pyproject.toml` |
-| network | `httpx.HTTPTransport.handle_request` → `FakeAmtrakerAPI` | any `httpx.Client` anywhere uses it |
+| network | `httpx.HTTPTransport.handle_request` → `FakeAmtrakerAPI`; `socket.connect` refused as a backstop | any `httpx.Client` anywhere uses it; a network call that bypasses httpx fails the test instead of reaching the live API |
 | clock | `time-machine` (also freezes aware `datetime.now(tz)`), `TZ=America/New_York` | not tied to a helper like `_now` |
 | sleep | `time.sleep` *and every alias of it found in `amtrak_status.*` modules* | works however `sleep` is imported |
 | notifications | `subprocess.run` (same alias scan) and `sys.platform` | same |

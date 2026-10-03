@@ -79,6 +79,8 @@ product decision.
 | B28 | Test | `_now()` exists "for test patching", but `calculate_position_between_stations` only uses it for naive datetimes. For real (timezone-aware ISO) data it calls `datetime.now(timezone.utc)` directly, so position tests on fixture data run against the real clock and can only assert `0 ≤ progress ≤ 1`. |
 | B30 | Test | `parse_time` returns naive datetimes for epoch-millisecond input but aware ones for ISO strings (legacy xfail `test_comparing_naive_and_aware_raises`). `calculate_layover` "fixes" a mismatch by labelling the naive side as UTC, but it is actually local time. The live API only sends ISO strings, so the epoch-ms path only exists for the synthetic test data. |
 
+| B34 | Test | `tests/legacy/test_amtrak_status.py::TestMultiTrainArgParsing::test_two_train_numbers_triggers_multi_mode` doesn't mock `fetch_station_schedule` or `sleep`. On every run it makes a real request to `api-v3.amtraker.com/v3/stations/PHL` and sleeps for 2 s. It passes whether or not the request succeeds. `test_notify_at_arg`, `test_notify_all_arg` and `test_multi_train_connection_arg` each really sleep for 1 s. |
+
 ## Dead code (delete during the refactor)
 
 - `build_predeparture_panel()`: only called from tests.
