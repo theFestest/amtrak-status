@@ -1,0 +1,28 @@
+# argv: amtrak-status b5712 --once
+# exit: 0
+# requests: /v3/trains/b5712
+# sleeps: -
+# ------------------------------------------------------------
+[cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
+[cyan]│[/] [bold white]🚂 Brightline[/] [bold dim white]#b5712 (b5712-3)[/]                                                                                       [cyan]│[/]
+[cyan]│[/] [bold white]Next: Miami[/] [bold dim white]@ 11:42 AM[/]                                                                                               [cyan]│[/]
+[cyan]│[/] [bold white]Heading: W @ —[/]                                                                                                       [cyan]│[/]
+[cyan]│[/] [bold white]Destination: Orlando[/]                                                                                                 [cyan]│[/]
+[cyan]│                                                                                                                      │[/]  (×3)
+[cyan]╰──────────────────────────────[/] [dim cyan]Updated: 11:04:30 | Refresh: 30s | Press Ctrl+C to quit[/] [cyan]───────────────────────────────╯[/]
+[blue]╭──────────────────────────────────────────────────[/] [bold blue]Journey Progress[/] [blue]──────────────────────────────────────────────────╮[/]
+[blue]│[/] [bold blue]Miami[/] [color(237)]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/] [bold blue]Orlando[/]   [magenta]0%[/]                                                          [blue]│[/]
+[blue]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
+[magenta]╭──────────────────────────────────────[/] [bold magenta]Stations[/] [dim magenta](green=actual, cyan=estimated)[/] [magenta]───────────────────────────────────────╮[/]
+[magenta]│[/] [dim]┏━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓[/] [magenta]│[/]
+[magenta]│[/] [dim]┃     ┃[/] [bold magenta]Station[/]                   [dim]┃[/]   [bold magenta]Sch Arr[/]    [dim]┃[/]   [bold magenta]Sch Dep[/]    [dim]┃[/]  [bold magenta]Act/Est Arr[/]   [dim]┃[/]  [bold magenta]Act/Est Dep[/]  [dim]┃[/]     [bold magenta]Status[/]      [dim]┃[/] [magenta]│[/]
+[magenta]│[/] [dim]┡━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Miami (BEKW)[/]              [dim]│[/]   11:42 AM   [dim]│[/]   11:42 AM   [dim]│[/]    [cyan]11:42 AM[/]    [dim]│[/]   [cyan]11:42 AM[/]    [dim]│[/]     [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Aventura (BAVE)[/]           [dim]│[/]   11:59 AM   [dim]│[/]   12:01 PM   [dim]│[/]    [cyan]11:59 AM[/]    [dim]│[/]   [cyan]12:01 PM[/]    [dim]│[/]     [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Fort Lauderdale (BFBT)[/]    [dim]│[/]   12:15 PM   [dim]│[/]   12:17 PM   [dim]│[/]    [cyan]12:15 PM[/]    [dim]│[/]   [cyan]12:17 PM[/]    [dim]│[/]     [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Boca Raton (BRRN)[/]         [dim]│[/]   12:33 PM   [dim]│[/]   12:35 PM   [dim]│[/]    [cyan]12:33 PM[/]    [dim]│[/]   [cyan]12:35 PM[/]    [dim]│[/]     [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]West Palm Beach (BWPT)[/]    [dim]│[/]   12:58 PM   [dim]│[/]   1:00 PM    [dim]│[/]    [cyan]12:58 PM[/]    [dim]│[/]    [cyan]1:00 PM[/]    [dim]│[/]     [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Orlando (BMCO)[/]            [dim]│[/]   3:16 PM    [dim]│[/]   3:16 PM    [dim]│[/]    [cyan]3:08 PM[/]     [dim]│[/]    [cyan]3:08 PM[/]    [dim]│[/]     [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]└─────┴───────────────────────────┴──────────────┴──────────────┴────────────────┴───────────────┴─────────────────┘[/] [magenta]│[/]
+[magenta]│                                                                                                                      │[/]  (×36)
+[magenta]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]

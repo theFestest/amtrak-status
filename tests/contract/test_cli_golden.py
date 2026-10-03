@@ -12,7 +12,16 @@ from __future__ import annotations
 import pytest
 
 from _harness import App, HTTPStatus, NetworkError, RawBody, assert_golden, golden_document, load_fixture, train_payload
-from _payloads import MIDJOURNEY, NER_171, UPSTREAM_42, depart_through, drop_stations, long_route_payload
+from _payloads import (
+    LIVE_CAPTURED_AT,
+    MIDJOURNEY,
+    NER_171,
+    UPSTREAM_42,
+    depart_through,
+    drop_stations,
+    live_train,
+    long_route_payload,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -177,3 +186,30 @@ def test_non_json_body_is_recorded(app: App) -> None:
     result = app.run(*argv)
     assert result.exception is not None
     assert_golden("single-non-json-body", golden_document(argv, result))
+
+
+# -----------------------------------------------------------------------------
+# Real API responses (tests/fixtures/live/, captured 2026-10-03 11:04:30 EDT)
+# -----------------------------------------------------------------------------
+
+LIVE = {
+    # id: (requested train id, payload factory, extra argv)
+    "live-42": ("42", lambda: live_train("42"), []),
+    "live-42-compact": ("42", lambda: live_train("42"), ["--compact"]),
+    "live-5-three-runs": ("5", lambda: live_train("5"), []),  # B27: shows the oldest run
+    "live-5-day-2": ("5-2", lambda: live_train("5", "5-2"), []),
+    "live-757-no-data-stops": ("757", lambda: live_train("757"), ["--all"]),
+    "live-660-completed": ("660", lambda: live_train("660"), []),  # B33
+    "live-b5712-brightline": ("b5712", lambda: live_train("b5712"), []),  # B35
+}
+
+
+@pytest.mark.parametrize("scenario", LIVE)
+def test_live_capture_once(app: App, scenario: str) -> None:
+    requested, payload, extra = LIVE[scenario]
+    app.now = LIVE_CAPTURED_AT
+    app.api.train(requested, payload())
+    argv = [requested, "--once", *extra]
+    result = app.run(*argv)
+    assert result.exception is None
+    assert_golden(scenario, golden_document(argv, result))

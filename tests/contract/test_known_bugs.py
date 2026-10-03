@@ -17,7 +17,7 @@ import importlib.metadata
 import pytest
 
 from _harness import App, RawBody, train_payload
-from _payloads import NER_171, UPSTREAM_42, journey, long_route_payload, with_stop
+from _payloads import LIVE_CAPTURED_AT, NER_171, UPSTREAM_42, journey, live_train, long_route_payload, with_stop
 
 
 def bug(bug_id: str, summary: str):
@@ -223,6 +223,36 @@ def test_b25_only_the_next_stop_is_marked_enroute(app: App) -> None:
     result = app.run("42", "--once")
     table_rows = [line for line in result.plain.splitlines() if line.startswith("│ │")]
     assert sum("Enroute" in row for row in table_rows) == 1
+
+
+# -----------------------------------------------------------------------------
+# Real API data (tests/fixtures/live/)
+# -----------------------------------------------------------------------------
+
+
+@bug("B27", "several runs share a train number and the API lists them oldest first; the code shows [0]")
+def test_b27_train_number_shows_most_recent_run(app: App) -> None:
+    app.now = LIVE_CAPTURED_AT
+    app.api.train("5", live_train("5"))  # runs 5-30, 5-1, 5-2 are all on the road
+    result = app.run("5", "--once")
+    assert "#5 (5-2)" in result.plain  # the code comment's stated intent: "the most recent one"
+
+
+@bug("B33", "a Completed train keeps its terminus 'Enroute', so it is shown as still arriving")
+def test_b33_completed_train_is_shown_as_arrived(app: App) -> None:
+    app.now = LIVE_CAPTURED_AT
+    app.api.train("660", live_train("660"))  # trainState Completed, arrived NYP 10:57
+    result = app.run("660", "--once")
+    assert "100%" in result.plain
+    assert "Next: New York Penn" not in result.plain
+
+
+@bug("B35", "UTC ('...Z') times are displayed in UTC instead of the station's local time")
+def test_b35_utc_times_are_shown_in_station_local_time(app: App) -> None:
+    app.now = LIVE_CAPTURED_AT
+    app.api.train("b5712", live_train("b5712"))  # Miami schDep 2026-10-03T11:42:00.000Z = 7:42 AM EDT
+    result = app.run("b5712", "--once")
+    assert "7:42 AM" in result.plain
 
 
 # -----------------------------------------------------------------------------

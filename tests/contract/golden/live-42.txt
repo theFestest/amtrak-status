@@ -1,0 +1,38 @@
+# argv: amtrak-status 42 --once
+# exit: 0
+# requests: /v3/trains/42
+# sleeps: -
+# ------------------------------------------------------------
+[cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
+[cyan]│[/] [bold white]🚂 Pennsylvanian[/] [bold dim white]#42 (42-3)[/]                                                                                          [cyan]│[/]
+[cyan]│[/] [bold white]Next: Huntingdon[/] [bold dim white]@ 11:04 AM[/] [bold dim red](+18m)[/]                                                                                   [cyan]│[/]
+[cyan]│[/] [bold white]Heading: S @ 51 mph[/]                                                                                                  [cyan]│[/]
+[cyan]│[/] [bold white]Position: TYR[/] [bold green]████████████████████[/] [bold white]HGD[/] [bold dim white](arriving)[/]                                                                    [cyan]│[/]
+[cyan]│[/] [bold white]Destination: New York Penn[/]                                                                                           [cyan]│[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]╰──────────────────────────────[/] [dim cyan]Updated: 11:04:30 | Refresh: 30s | Press Ctrl+C to quit[/] [cyan]───────────────────────────────╯[/]
+[blue]╭──────────────────────────────────────────────────[/] [bold blue]Journey Progress[/] [blue]──────────────────────────────────────────────────╮[/]
+[blue]│[/] [bold blue]Pittsburgh[/] [green]━━━━━━━━━━━━━━[/][color(237)]╺━━━━━━━━━━━━━━━━━━━━━━━━━[/] [bold blue]New York Penn[/]  [magenta]35%[/]                                               [blue]│[/]
+[blue]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
+[magenta]╭──────────────────────────────────────[/] [bold magenta]Stations[/] [dim magenta](green=actual, cyan=estimated)[/] [magenta]───────────────────────────────────────╮[/]
+[magenta]│[/] [dim]┏━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓[/] [magenta]│[/]
+[magenta]│[/] [dim]┃     ┃[/] [bold magenta]Station[/]                         [dim]┃[/]   [bold magenta]Sch Arr[/]   [dim]┃[/]   [bold magenta]Sch Dep[/]   [dim]┃[/] [bold magenta]Act/Est Arr[/]  [dim]┃[/] [bold magenta]Act/Est Dep[/]  [dim]┃[/]     [bold magenta]Status[/]     [dim]┃[/] [magenta]│[/]
+[magenta]│[/] [dim]┡━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ⋮  │[/] [dim italic][4 departed stops hidden][/]       [dim]│             │             │              │              │                │[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [green]✓[/]  [dim]│[/] [green]Altoona (ALT)[/]                   [dim]│[/]   9:59 AM   [dim]│[/]  10:03 AM   [dim]│[/]   [green]10:19 AM[/]   [dim]│[/]   [green]10:21 AM[/]   [dim]│[/]    [dim green]Departed[/]    [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [green]✓[/]  [dim]│[/] [green]Tyrone (TYR)[/]                    [dim]│[/]  10:19 AM   [dim]│[/]  10:21 AM   [dim]│[/]   [green]10:37 AM[/]   [dim]│[/]   [green]10:38 AM[/]   [dim]│[/]    [dim green]Departed[/]    [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Huntingdon (HGD)[/]                [dim]│[/]  10:46 AM   [dim]│[/]  10:48 AM   [dim]│[/]   [cyan]11:04 AM[/]   [dim]│[/]   [cyan]11:04 AM[/]   [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Lewistown (LEW)[/]                 [dim]│[/]  11:26 AM   [dim]│[/]  11:28 AM   [dim]│[/]   [cyan]11:40 AM[/]   [dim]│[/]   [cyan]11:40 AM[/]   [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Harrisburg (HAR)[/]                [dim]│[/]  12:55 PM   [dim]│[/]   1:05 PM   [dim]│[/]   [cyan]12:55 PM[/]   [dim]│[/]   [cyan]12:55 PM[/]   [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Elizabethtown (ELT)[/]             [dim]│[/]   1:22 PM   [dim]│[/]   1:23 PM   [dim]│[/]   [cyan]1:22 PM[/]    [dim]│[/]   [cyan]1:22 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Lancaster (LNC)[/]                 [dim]│[/]   1:41 PM   [dim]│[/]   1:45 PM   [dim]│[/]   [cyan]1:41 PM[/]    [dim]│[/]   [cyan]1:41 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Exton (EXT)[/]                     [dim]│[/]   2:16 PM   [dim]│[/]   2:17 PM   [dim]│[/]   [cyan]2:16 PM[/]    [dim]│[/]   [cyan]2:16 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Paoli (PAO)[/]                     [dim]│[/]   2:27 PM   [dim]│[/]   2:29 PM   [dim]│[/]   [cyan]2:27 PM[/]    [dim]│[/]   [cyan]2:27 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Philadelphia 30th Street (PHL)[/]  [dim]│[/]   2:59 PM   [dim]│[/]   3:25 PM   [dim]│[/]   [cyan]2:59 PM[/]    [dim]│[/]   [cyan]2:59 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Trenton (TRE)[/]                   [dim]│[/]   3:54 PM   [dim]│[/]   3:56 PM   [dim]│[/]   [cyan]3:54 PM[/]    [dim]│[/]   [cyan]3:54 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Newark Penn (NWK)[/]               [dim]│[/]   4:30 PM   [dim]│[/]   4:32 PM   [dim]│[/]   [cyan]4:29 PM[/]    [dim]│[/]   [cyan]4:29 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]New York Penn (NYP)[/]             [dim]│[/]   4:50 PM   [dim]│[/]   4:50 PM   [dim]│[/]   [cyan]4:43 PM[/]    [dim]│[/]   [cyan]4:43 PM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]└─────┴─────────────────────────────────┴─────────────┴─────────────┴──────────────┴──────────────┴────────────────┘[/] [magenta]│[/]
+[magenta]│                                                                                                                      │[/]  (×28)
+[magenta]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]

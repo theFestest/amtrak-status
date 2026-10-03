@@ -6,12 +6,25 @@ All helpers return new objects and never mutate their input.
 from __future__ import annotations
 
 import copy
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from _harness import train_payload
+from _harness import load_fixture, train_payload
 
 MIDJOURNEY = "train_active_midjourney.json"
 UPSTREAM_42 = "train_42_upstream_shape.json"
 NER_171 = "train_171_northeast_regional.json"
+
+# tests/fixtures/live/ holds real responses captured at this instant (see tests/fixtures/README.md).
+LIVE_CAPTURED_AT = datetime(2026, 10, 3, 11, 4, 30, tzinfo=ZoneInfo("America/New_York"))
+
+
+def live_train(number: str, train_id: str | None = None) -> dict:
+    """A captured ``/v3/trains/{number}`` body, optionally narrowed to one run like ``/v3/trains/5-2``."""
+    payload = load_fixture(f"live/train_{number}.json")
+    if train_id is not None:
+        payload = {number: [t for t in payload[number] if t["trainID"] == train_id]}
+    return payload
 
 
 def _train(payload: dict) -> dict:

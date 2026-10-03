@@ -1,0 +1,28 @@
+# argv: amtrak-status 660 --once
+# exit: 0
+# requests: /v3/trains/660
+# sleeps: -
+# ------------------------------------------------------------
+[cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
+[cyan]│[/] [bold white]🚂 Keystone[/] [bold dim white]#660 (660-3)[/]                                                                                             [cyan]│[/]
+[cyan]│[/] [bold white]Next: New York Penn[/] [bold dim white]@ 10:57 AM[/] [bold dim red](+8m)[/]                                                                                 [cyan]│[/]
+[cyan]│[/] [bold white]Heading: N @ —[/]                                                                                                       [cyan]│[/]
+[cyan]│[/] [bold white]Position: NWK[/] [bold green]████████████████████[/] [bold white]NYP[/] [bold dim white](arriving)[/]                                                                    [cyan]│[/]
+[cyan]│[/] [bold white]Destination: New York Penn[/]                                                                                           [cyan]│[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]╰──────────────────────────────[/] [dim cyan]Updated: 11:04:30 | Refresh: 30s | Press Ctrl+C to quit[/] [cyan]───────────────────────────────╯[/]
+[blue]╭──────────────────────────────────────────────────[/] [bold blue]Journey Progress[/] [blue]──────────────────────────────────────────────────╮[/]
+[blue]│[/] [bold blue]Harrisburg[/] [green]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸[/][color(237)]━━[/] [bold blue]New York Penn[/]  [magenta]94%[/]                                               [blue]│[/]
+[blue]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
+[magenta]╭──────────────────────────────────────[/] [bold magenta]Stations[/] [dim magenta](green=actual, cyan=estimated)[/] [magenta]───────────────────────────────────────╮[/]
+[magenta]│[/] [dim]┏━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓[/] [magenta]│[/]
+[magenta]│[/] [dim]┃     ┃[/] [bold magenta]Station[/]                       [dim]┃[/]   [bold magenta]Sch Arr[/]   [dim]┃[/]   [bold magenta]Sch Dep[/]   [dim]┃[/]  [bold magenta]Act/Est Arr[/]  [dim]┃[/]  [bold magenta]Act/Est Dep[/]  [dim]┃[/]     [bold magenta]Status[/]     [dim]┃[/] [magenta]│[/]
+[magenta]│[/] [dim]┡━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ⋮  │[/] [dim italic][14 departed stops hidden][/]    [dim]│             │             │               │               │                │[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [green]✓[/]  [dim]│[/] [green]Newark Airport (EWR)[/]          [dim]│[/]  10:25 AM   [dim]│[/]  10:25 AM   [dim]│[/]   [green]10:27 AM[/]    [dim]│[/]   [green]10:28 AM[/]    [dim]│[/]    [dim green]Departed[/]    [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [green]✓[/]  [dim]│[/] [green]Newark Penn (NWK)[/]             [dim]│[/]  10:31 AM   [dim]│[/]  10:31 AM   [dim]│[/]   [green]10:31 AM[/]    [dim]│[/]   [green]10:33 AM[/]    [dim]│[/]    [dim green]Departed[/]    [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]New York Penn (NYP)[/]           [dim]│[/]  10:49 AM   [dim]│[/]  10:49 AM   [dim]│[/]   [cyan]10:57 AM[/]    [dim]│[/]   [cyan]10:57 AM[/]    [dim]│[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]└─────┴───────────────────────────────┴─────────────┴─────────────┴───────────────┴───────────────┴────────────────┘[/] [magenta]│[/]
+[magenta]│                                                                                                                      │[/]  (×38)
+[magenta]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
