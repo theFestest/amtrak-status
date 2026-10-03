@@ -16,8 +16,9 @@ contract test harness in [`tests/contract/`](../tests/contract/).
   behaviour is preserved, which makes them unusable as a migration safety net.
 * **Phase 0 (done in this PR)** adds that safety net. Contract tests drive the real CLI through
   seams that survive refactoring (console-script entry point, httpx transport, wall clock, sleep,
-  stdin/stdout, `subprocess.run`). They pin every observable effect in 54 golden files that
-  include colours, plus 37 behaviour and boundary tests and 22 strict-xfail tests for known bugs.
+  stdin/stdout, `subprocess.run`). They pin every observable effect in 61 golden files that
+  include colours (7 of them from real API responses), plus 37 behaviour and boundary tests and
+  25 strict-xfail tests for known bugs.
   Nothing under `tests/contract/` imports the package. On a random sample of mutants the contract
   suite alone scores 65 %, and 71 % together with the legacy tests (§4).
 * The target is a small package with a typed domain model, no module globals, pure render
@@ -38,38 +39,49 @@ contract test harness in [`tests/contract/`](../tests/contract/).
 | Domain logic | spread across render functions | "next stop + ETA + delay" is implemented 3 times and the copies have drifted (B18, B19); station lookup by code is a hand-written loop 8 times; the panel subtitle is built twice |
 | Rendering | `build_*` functions read config globals; the two top-level screen builders (`build_display`, `build_multi_train_display`) also **fetch** | full screens can't be rendered without mocking the network; API strings are interpolated into Rich markup (B11) |
 | CLI / orchestration | `main()`: 380 lines, 4 nested levels of connection-setup branches | the station-schedule fallback is copy-pasted 4 times and can never succeed against the real API (B23) |
-| Time | `parse_time` returns naive datetimes for epoch-ms input and aware ones for ISO input; `_now()` only covers the naive path | the real API only sends ISO strings, so the epoch-ms path (which most tests exercise) is dead in production, and real-data paths can't be clock-controlled (B28) |
+| Time | since #2, `parse_time` accepts ISO strings only; strings with an offset (all real data) become aware datetimes, offset-less ones (the legacy test builders) naive. `_now()` only covers the naive path | real-data paths can't be clock-controlled through `_now()` (B28); UTC (`Z`) times are displayed in UTC (B35) |
 
 ### 1.2 What the live API actually sends
 
-Confirmed by reading the server source
-([`amtraker-v3/index.ts`](https://github.com/piemadd/amtraker-v3/blob/74789d05790d6b2f34b33044b6c9b5c3bba7041e/index.ts));
-the API host was blocked from this environment, so no live capture was possible. The domain model
-must be built around these facts, not around the current fixtures:
+Verified against a live snapshot of every train in the feed (180 trains, 2026-10-03 11:04:30 EDT),
+cross-checked with the server source
+([`amtraker-v3/index.ts`](https://github.com/piemadd/amtraker-v3/blob/74789d05790d6b2f34b33044b6c9b5c3bba7041e/index.ts)).
+The domain model must be built around these facts, not around the hand-written fixtures:
 
-* Times are ISO-8601 strings with a fixed offset, e.g. `2026-02-08T07:25:00-05:00`. Epoch
-  milliseconds are never sent.
-* Stop `status` is `Departed`, `Station`, `Enroute` or (rarely) missing / `Unknown`. **Every stop
-  not yet reached is `Enroute`**, not just the next one. `""` is never sent (B25).
-* For stops not yet reached, `dep` is a copy of the arrival estimate (`dep ?? arr`), and
-  `schArr`/`schDep` back-fill each other at the origin and terminus (B26).
-* A predeparture train's origin has status `Station`. Trains appear in the feed only within about
-  1 h of departure.
-* Unknown train or station → `[]`. `/v3/trains/42-26` answers keyed by `"42"`.
-* `/v3/stations/{code}` is metadata plus `trains: ["42-8", …]`. There are no times in it (B23).
-* `statusMsg` is `" "` for VIA, Brightline and CPKC trains (B10). It can also be the literal string
-  `"SERVICE DISRUPTION"`.
+* Times are ISO-8601 strings. Amtrak sends a fixed offset (`2026-10-03T07:25:00-04:00`).
+  Brightline and some VIA stops send UTC with milliseconds (`…T11:42:00.000Z`), even though the
+  station `tz` is local (B35). Epoch milliseconds never appear (#2 already dropped support for them).
+* Stop `status` is `Departed`, `Station` or `Enroute`; `""` never appears. **Every stop not yet
+  reached is `Enroute`**, not just the next one (B25).
+* For stops not yet reached, `dep` is usually a copy of the arrival estimate (84 % of `Enroute`
+  stops), and `schArr`/`schDep` back-fill each other at the origin and terminus (B26).
+* A `Station` stop with no `arr`/`dep` means Amtrak has no data for it. In practice that is a
+  skipped stop, which the existing cancelled-stop heuristic handles correctly.
+* `trainState` is `Active`, `Predeparture` or `Completed`. A `Completed` train's final stop stays
+  `Enroute` (B33). Predeparture trains appear at most about an hour before origin departure (live
+  maximum 56 min; upstream cutoff since 2026-04-18); their origin is usually `Enroute` with
+  `arr`/`dep` equal to the schedule.
+* `statusMsg` is a single space and `trainTimely` is empty for **every** train, Amtrak included
+  (B10). The feed carries no on-time/late text.
+* Several runs of one train number can be active at once (9 numbers in the snapshot), listed
+  **oldest first** (B27). `/v3/trains/42-26` selects one run and answers keyed by `"42"`. Unknown
+  train or station → `[]`.
+* `/v3/stations/{code}` is metadata plus `trains: ["42-3", …]` (IDs only, ever since 2022).
+  `/v3/stations/expanded/{code}` adds per-train times, but only for trains already in the feed
+  (B23).
 
-Two new fixtures follow these rules (`train_42_upstream_shape.json`,
-`train_171_northeast_regional.json`); see [`tests/fixtures/README.md`](../tests/fixtures/README.md).
+Six real responses from the snapshot are kept in `tests/fixtures/live/` and pinned by goldens.
+Two generated fixtures (`train_42_upstream_shape.json`, `train_171_northeast_regional.json`) follow
+the same rules for scenarios the snapshot doesn't cover; see
+[`tests/fixtures/README.md`](../tests/fixtures/README.md).
 
 ### 1.3 Tests
 
 | Measure | Value |
 |---|---|
-| Tests (before this PR) | 361 passing + 3 xfail |
+| Tests (before this PR, including #2) | 360 passing + 2 xfail |
 | Branch coverage of `tracker.py` | 89 % |
-| Mutation score (mutmut 3.8, all 4,478 mutants of `tracker.py`) | **47.4 %** (2,123 killed, 2,355 survived) |
+| Mutation score (mutmut 3.8, all 4,478 mutants of `tracker.py`, measured just before #2) | **47.4 %** (2,123 killed, 2,355 survived) |
 | Tests that patch `amtrak_status.tracker.*` | 88 of 335 class-based tests (170 `patch(...)` calls) |
 | Tests whose only assertions are `isinstance(...)` | 22 |
 | Direct reads/writes of module globals in tests | 76 |
@@ -78,9 +90,10 @@ Why the score is low even though coverage is high:
 
 * **No style assertions.** `render_to_text` exports plain text, so every colour and emphasis
   decision is untested. That includes the README's headline "green for on-time, red for late".
-* **Unrealistic inputs.** The synthetic builders use epoch-ms timestamps and `status=""` for
-  future stops. The live API sends neither, so the code paths that real data takes are only
-  lightly exercised.
+* **Unrealistic inputs.** Since #2 the synthetic builders produce ISO strings, but without an
+  offset (so they take the naive-datetime path that real data never takes, B28), with `status=""`
+  for future stops (never sent, B25) and with real status messages (live: always `" "`, B10). So
+  the code paths that real data takes are only lightly exercised.
 * **Weak or misleading assertions.** For example, `test_midjourney_build_display` checks
   `"New York Penn" in text`, which the *header* satisfies even though the stations table is
   clipped before the NYP row (B09). `test_departed_before_init_not_notified` checks the
@@ -239,7 +252,7 @@ code, and the console script does `sys.exit(main())` (the harness already suppor
 | `tracker.py` today | Target |
 |---|---|
 | `_now` | `Clock` / `SystemClock` (app wiring); domain functions take `now` as a parameter |
-| `parse_time` | `models.parse_time` (ISO → aware; the epoch-ms branch can go once the legacy tests are migrated) |
+| `parse_time` | `models.parse_time` (ISO → aware, converted to the stop's `tz` for display, which fixes B35) |
 | `format_time` | `render/theme.py` (or `render/format.py`) |
 | `is_station_cancelled` | `models` (computed into `Stop.cancelled` at parse time) |
 | `find_station_index`, `get_station_times`, `get_station_status` | `Train.stop(code)` / `Train.index_of(code)` |
@@ -278,8 +291,8 @@ controls only these seams:
 
 What it pins:
 
-* `test_cli_golden.py`: 54 `--once` scenarios (single train × flags × fixtures, API failures,
-  connection mode with every setup branch including prompts). Each golden file records argv,
+* `test_cli_golden.py`: 61 `--once` scenarios (single train × flags × fixtures, API failures,
+  connection mode with every setup branch including prompts, and 7 real API responses). Each golden file records argv,
   exit code, HTTP requests, sleeps, notifications, and the screen **with styles**
   (`[green]✓[/] Pittsburgh`). Today's bugs are pinned too, so a refactor that accidentally
   "fixes" something is also caught.
@@ -288,7 +301,7 @@ What it pins:
 * `test_cli_connection.py`: 18 table-driven tests of layover classification at its boundaries
   (−1/0/29/30/44/45/59/60/61/135 min, unknown, missed, made). They assert the exact style of each
   label via `style_at()`.
-* `test_known_bugs.py`: 22 strict-xfail tests, one per bug that the CLI can reach.
+* `test_known_bugs.py`: 25 strict-xfail tests, one per bug that the CLI can reach.
 
 How strong is the net? mutmut on a uniform random sample of 800 of the 4,478 `tracker.py`
 mutants (95 % CI ± 3.5 points):
@@ -363,19 +376,26 @@ Triage of the legacy suite during migration:
 | Rendered-text checks (`TestRendered*`, `TestJourneyPhase*`, `TestBuild*Panel`, `TestFixtureFullPipeline`, `TestBuildConnectionPanel`) | mostly superseded by goldens; keep the few that test a decision (e.g. elision counts) as view-model tests |
 | `main()`/orchestration (`TestMainArgParsing`, `TestMainMultiTrainOrchestration`, `TestMainLiveRefreshLoop`, `TestMultiTrainArgParsing`) | superseded by contract tests; delete in phase 7 |
 | `isinstance`-only tests and `@pytest.mark.coincidence` tests | delete |
-| Existing xfails | B23/B29/B30, tracked in known-bugs.md; resolve with the decisions below |
+| Existing xfails | B23/B29, tracked in known-bugs.md; resolve with the decisions below |
 
 ## 7. Decisions needed
 
-1. **B23, station-schedule fallback:** delete it (recommended; it cannot work with Amtraker v3), or
-   add a timetable source such as Amtrak's GTFS feed (a new feature, so after the refactor).
-2. **B29, layover bands:** keep 3 bands (risky < 30 ≤ tight < 60 ≤ comfortable) and drop
+1. **B23, station-schedule fallback:** delete it and tell the user when the train will appear
+   (recommended; no Amtraker endpoint has ever returned what it looks for), or add a timetable
+   source such as Amtrak's GTFS feed (a new feature, so after the refactor). Either way, document
+   the gap; known-bugs.md describes it.
+2. **B10, train status:** the feed has no status text, so derive "On time" / "N min late" from the
+   computed delay (which needs B19 settled), or drop the status column.
+3. **B27, which run of a train number to show:** the most recent active run, the run nearest the
+   user's `--from` station, or a prompt? Today it is always the oldest.
+4. **B33, completed trains:** show them as arrived (100 %, no "Next"), or say "completed" and exit?
+5. **B29, layover bands:** keep 3 bands (risky < 30 ≤ tight < 60 ≤ comfortable) and drop
    `LAYOVER_TIGHT`, or add a fourth band at 45.
-3. **B25/B26, presenting real API data:** only highlight the next stop, and show later stops as
+6. **B25/B26, presenting real API data:** only highlight the next stop, and show later stops as
    "Scheduled"/"Expected"? Treat a future stop's `dep == arr` as "no departure estimate" and use
    `max(estimate, scheduled departure)` for layovers?
-4. **B19:** one delay threshold everywhere (suggested: show any non-zero delay, as the header does).
-5. **Python floor:** Python 3.10 reaches end of life this month (October 2026). Moving to `>=3.11`
+7. **B19:** one delay threshold everywhere (suggested: show any non-zero delay, as the header does).
+8. **Python floor:** Python 3.10 reaches end of life this month (October 2026). Moving to `>=3.11`
    simplifies typing (`Self`, `StrEnum`) and lets tests use `tomllib`.
-6. **Import compatibility:** keep `amtrak_status.tracker` as a deprecated re-export for one
+9. **Import compatibility:** keep `amtrak_status.tracker` as a deprecated re-export for one
    release, or drop it. It is a CLI, so dropping it is probably fine.
