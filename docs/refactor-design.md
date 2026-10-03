@@ -17,8 +17,9 @@ contract test harness in [`tests/contract/`](../tests/contract/).
 * **Phase 0 (done in this PR)** adds that safety net. Contract tests drive the real CLI through
   seams that survive refactoring (console-script entry point, httpx transport, wall clock, sleep,
   stdin/stdout, `subprocess.run`). They pin every observable effect in 54 golden files that
-  include colours, plus 19 behavioural tests and 22 strict-xfail tests for known bugs. Nothing
-  under `tests/contract/` imports the package.
+  include colours, plus 37 behaviour and boundary tests and 22 strict-xfail tests for known bugs.
+  Nothing under `tests/contract/` imports the package. On a random sample of mutants the contract
+  suite alone scores 65 %, and 71 % together with the legacy tests (§4).
 * The target is a small package with a typed domain model, no module globals, pure render
   functions and injected I/O (HTTP client, clock, sleep, notifier, prompt). The migration has
   seven behaviour-preserving phases (zero golden diffs allowed), then one PR per bug fix.
@@ -133,28 +134,28 @@ Non-goals: new features, a different UI library, async I/O, supporting other API
 
 ```
 amtrak_status/
-├── __init__.py        __version__ from importlib.metadata (fixes B12); re-exports main
-├── __main__.py        python -m amtrak_status
-├── cli.py             argparse → Config; validation (B05, B17); main(argv=None) -> int
-├── config.py          @dataclass(frozen=True) Config
-├── models.py          Train, Stop, StopStatus; from_api() parsing; parse_time (aware datetimes only)
-├── journey.py         pure: next_stop, progress, position_between_stops(now), delay, visible_rows(filter+focus)
-├── connection.py      pure: shared_stops, Layover + LayoverStatus classification
-├── api.py             AmtrakerClient(http: httpx.Client, sleep): get_train() -> Found | NotFound | Failed
-├── feed.py            TrainFeed (one per train): cache, staleness, last success time, warning
-├── notify.py          ArrivalWatcher (one per train) → events; Notifier protocol + platform backends
-├── setup.py           resolve the connection station (auto-detect / prompt), with an injected ask()
-├── app.py             Tracker.tick() → Screen; run_once / run_compact / run_live with injected console, clock, sleep
+├── __init__.py            __version__ from importlib.metadata (fixes B12); re-exports main
+├── __main__.py            python -m amtrak_status
+├── cli.py                 argparse → Config; validation (B05, B17); main(argv=None) -> int
+├── config.py              @dataclass(frozen=True) Config
+├── models.py              Train, Stop, StopStatus; from_api() parsing; parse_time (aware datetimes only)
+├── journey.py             pure: next_stop, progress, position_between_stops(now), delay, visible_rows(filter+focus)
+├── connection.py          pure: shared_stops, Layover + LayoverStatus classification
+├── api.py                 AmtrakerClient(http: httpx.Client, sleep): get_train() -> Found | NotFound | Failed
+├── feed.py                TrainFeed (one per train): cache, staleness, last success time, warning
+├── notify.py              ArrivalWatcher (one per train) → events; Notifier protocol + platform backends
+├── connection_setup.py    resolve the connection station (auto-detect / prompt), with an injected ask()
+├── app.py                 Tracker.tick() → Screen; run_once / run_compact / run_live with injected console, clock, sleep
 └── render/
-    ├── theme.py       every style, icon and label (status → icon/style lives here only)
-    ├── views.py       view models built from Train + now (one place for "next stop / ETA / delay")
-    ├── single.py      header, progress bar, stations table
-    ├── compact.py     one-line status
-    ├── connection.py  connection panel, train summaries, two-train layout
-    └── messages.py    error / not found / awaiting-departure panels, status bar
+    ├── theme.py           every style, icon and label (status → icon/style lives here only)
+    ├── views.py           view models built from Train + now (one place for "next stop / ETA / delay")
+    ├── single.py          header, progress bar, stations table
+    ├── compact.py         one-line status
+    ├── connection.py      connection panel, train summaries, two-train layout
+    └── messages.py        error / not found / awaiting-departure panels, status bar
 ```
 
-Dependency direction: `cli → app → {setup, feed, notify, render} → {journey, connection} → models`.
+Dependency direction: `cli → app → {connection_setup, feed, notify, render} → {journey, connection} → models`.
 `api` is used only by `feed`, and nothing under `render` imports `api`, `feed` or `app`.
 `models` imports nothing from the package.
 
@@ -220,7 +221,7 @@ different expiry rules (B07). `TrainFeed` is the single cache.
   it once, from a `Train` and `now`. The three drifting copies of next-stop/ETA logic collapse
   into one. Fixing B18/B19 then becomes a one-line change.
 * Panels are built with `Text.assemble` / `Text.append` instead of f-string markup, so API
-  strings are never parsed as markup (B11). This changes nothing visible, and the goldens prove it.
+  strings are never parsed as markup (B11). This should change nothing visible, and the goldens will confirm it.
 * The status bar (`Updated … | ⚠ … | Refresh: 30s | Press Ctrl+C to quit`) is one function taking
   a `StatusLine` value, replacing `build_header`'s copy and `_apply_main_title`.
 * All styles, icons and labels live in `theme.py`.
@@ -255,7 +256,7 @@ code, and the console script does `sys.exit(main())` (the harness already suppor
 | `fetch_train_data_cached` + cache parts of `fetch_train_data` | `feed.TrainFeed` |
 | `initialize_notification_state`, `check_and_notify` | `notify.ArrivalWatcher` |
 | `send_notification` | `notify.DesktopNotifier` (per-platform backends that pass text as arguments: fixes B20 later) |
-| `select_connection_station`, connection branches of `main` | `setup.resolve_connection(...)` with an injected `ask` |
+| `select_connection_station`, connection branches of `main` | `connection_setup.resolve_connection(...)` with an injected `ask` |
 | `fetch_station_schedule`, `get_train_schedule_from_station`, `build_predeparture_train_data` | delete, or replace (decision on B23) |
 | `build_display`, `build_multi_train_display`, loops in `main` | `app` |
 | argument parsing in `main` | `cli` + `config` |
@@ -284,7 +285,35 @@ What it pins:
   "fixes" something is also caught.
 * `test_cli_behavior.py`: 19 tests for the refresh loops (re-polling, intervals, retry backoff,
   cache fallback and expiry, notifications per platform, bell fallback, `--help`).
+* `test_cli_connection.py`: 18 table-driven tests of layover classification at its boundaries
+  (−1/0/29/30/44/45/59/60/61/135 min, unknown, missed, made). They assert the exact style of each
+  label via `style_at()`.
 * `test_known_bugs.py`: 22 strict-xfail tests, one per bug that the CLI can reach.
+
+How strong is the net? mutmut on a uniform random sample of 800 of the 4,478 `tracker.py`
+mutants (95 % CI ± 3.5 points):
+
+| Area (sampled mutants) | Legacy suite | Contract suite | Both |
+|---|---|---|---|
+| Small pure helpers (41) | 85 % | 61 % | 85 % |
+| Domain calculations (105) | 62 % | 54 % | 68 % |
+| Rendering (440) | 46 % | 72 % | 75 % |
+| I/O and orchestration (214) | 32 % | 55 % | 62 % |
+| **All (800)** | **46 %** | **65 %** | **71 %** |
+
+The contract suite catches 201 sampled mutants that the legacy suite misses, mostly styles, retry
+counts, cache fallbacks and notification text. The legacy suite catches 53 that the contract suite
+misses, mostly boundary conditions in pure helpers and domain functions, which end-to-end
+scenarios rarely hit. The 13 sampled mutants with no contract coverage are all in dead code
+(`build_predeparture_panel`, and `build_predeparture_train_data`, which is only reachable through
+the B23 fallback).
+
+An earlier run of the contract suite, without `test_cli_connection.py`, scored 62 % overall and 47 %
+on domain calculations. Mutation testing pointed at layover classification as the biggest
+contract gap, so the boundary table was added; for `calculate_layover` alone the contract suite
+went from 12 to 20 of 28 sampled mutants. Raising the remaining numbers is the job of the
+unit-test layer in §6 (boundary tables for helpers and domain functions). Not every survivor is
+worth chasing: some are equivalent mutants.
 
 Rules for refactoring PRs:
 
@@ -292,7 +321,9 @@ Rules for refactoring PRs:
    allowed edit is the entry-point path, if `pyproject.toml` changes it.
 2. The set of xfails must not change. With `xfail_strict`, an accidental fix shows up as a failure.
 3. Legacy tests that break because code moved are migrated in the same PR (see §6), not patched
-   to follow the new layout.
+   to follow the new layout. **Never delete a legacy test whose assertion isn't yet covered by
+   `tests/unit/` or `tests/contract/`.** For helpers and domain logic, the legacy tests are still
+   the stronger guard (table above).
 
 To intentionally change output: `UPDATE_GOLDEN=1 uv run pytest tests/contract`, then review
 `git diff tests/contract/golden` as part of the PR.
@@ -309,7 +340,7 @@ Each phase is one PR (or a few small ones). Phases 1–7 must satisfy the rules 
 | 4 | **API + feed.** `AmtrakerClient` (injected `httpx.Client` and `sleep`) and `TrainFeed`. Keep today's cache semantics, including the B07 re-stamping quirk, behind a clearly named method. Remove the `{"error": …}` dicts. | Unit tests with `httpx.MockTransport`. |
 | 5 | **Rendering.** Create `render/` with view models, theme and `StatusLine`; switch to `Text.assemble`. Render functions take view models only and never fetch. | The goldens are the main guard here. |
 | 6 | **Notifications.** `ArrivalWatcher` + `Notifier`. Initially **share one watcher between both trains**, so B01/B02 are preserved; fixing them is then a one-line change in phase 8. | |
-| 7 | **CLI, setup, app.** `Config`, `cli.main(argv) -> int`, `setup.resolve_connection` (merging the four copy-pasted branches), and `app` loops. Point the entry point at `amtrak_status.cli:main`, delete `tracker.py`, delete `tests/legacy/` (everything migrated or superseded). | Optionally keep `amtrak_status/tracker.py` as a one-line re-export for a release. |
+| 7 | **CLI, setup, app.** `Config`, `cli.main(argv) -> int`, `connection_setup.resolve_connection` (merging the four copy-pasted branches), and `app` loops. Point the entry point at `amtrak_status.cli:main`, delete `tracker.py`, delete `tests/legacy/` (everything migrated or superseded). | Optionally keep `amtrak_status/tracker.py` as a one-line re-export for a release. |
 | 8 | **Bug fixes**, one PR each: flip the xfail, update goldens, add a CHANGELOG entry. Suggested order: B03/B04 (crashes) → B01/B02 (notifications) → B07/B08 (caching) → B25/B26 (real-API semantics) → B18 → B09 → B20 → the rest; decisions (§7) as they are made. | |
 | 9 | **Tooling follow-ups.** Type-check `amtrak_status/` (pyright or mypy, strict on the new modules); coverage report in CI; run mutmut on `journey`/`connection`/`render/views` occasionally; relax the `rich<14` pin, letting the goldens show what Rich 14 changes. | |
 
