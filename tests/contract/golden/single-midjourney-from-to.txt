@@ -1,0 +1,31 @@
+# argv: amtrak-status 42 --once --from ALT --to PHL
+# exit: 0
+# requests: /v3/trains/42
+# sleeps: -
+# ------------------------------------------------------------
+[cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
+[cyan]│[/] [bold white]🚂 Pennsylvanian[/] [bold dim white]#42 (42-8)[/]                                                                                          [cyan]│[/]
+[cyan]│[/] [bold white]Next: Huntingdon[/] [bold dim white]@ 11:20 AM[/] [bold dim red](+5m)[/]                                                                                    [cyan]│[/]
+[cyan]│[/] [bold white]Heading: E @ 62 mph[/]                              [green]On Time[/]                                                             [cyan]│[/]
+[cyan]│[/] [bold white]Position: ALT[/] [bold green]███████████[/][bold dim white]░░░░░░░░░[/] [bold white]HUN[/] [bold dim white](20 min)[/]                                                                      [cyan]│[/]
+[cyan]│[/] [bold white]Destination: New York Penn[/]                                                                                           [cyan]│[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]╰──────────────────────────────[/] [dim cyan]Updated: 11:00:00 | Refresh: 30s | Press Ctrl+C to quit[/] [cyan]───────────────────────────────╯[/]
+[blue]╭──────────────────────────────────────────────────[/] [bold blue]Journey Progress[/] [blue]──────────────────────────────────────────────────╮[/]
+[blue]│[/] [bold blue]Pittsburgh[/] [green]━━━━━━━━━━━━━━━━━━━━[/][color(237)]╺━━━━━━━━━━━━━━━━━━━[/] [bold blue]New York Penn[/]  [magenta]50%[/]                                               [blue]│[/]
+[blue]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
+[magenta]╭────────────────────────────────[/] [bold magenta]Stations[/] [dim magenta](ALT → PHL) (green=actual, cyan=estimated)[/] [magenta]─────────────────────────────────╮[/]
+[magenta]│[/] [dim]┏━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓[/] [magenta]│[/]
+[magenta]│[/] [dim]┃     ┃[/] [bold magenta]Station[/]                         [dim]┃[/]   [bold magenta]Sch Arr[/]   [dim]┃[/]   [bold magenta]Sch Dep[/]   [dim]┃[/] [bold magenta]Act/Est Arr[/]  [dim]┃[/] [bold magenta]Act/Est Dep[/]  [dim]┃[/]     [bold magenta]Status[/]     [dim]┃[/] [magenta]│[/]
+[magenta]│[/] [dim]┡━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ⋮  │[/] [dim italic][4 earlier stops omitted][/]       [dim]│             │             │              │              │                │[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [green]✓[/]  [dim]│[/] [green]Altoona (ALT)[/]                   [dim]│[/]  10:20 AM   [dim]│[/]  10:30 AM   [dim]│[/]   [green]10:25 AM[/]   [dim]│[/]   [green]10:35 AM[/]   [dim]│[/]    [dim green]Departed[/]    [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Huntingdon (HUN)[/]                [dim]│[/]  11:15 AM   [dim]│[/]  11:16 AM   [dim]│[/]   [cyan]11:20 AM[/]   [dim]│              │[/]    [bold yellow]Enroute[/]     [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ Harrisburg (HBG)                │[/]  12:45 PM   [dim]│[/]  12:55 PM   [dim]│[/]   [cyan]12:50 PM[/]   [dim]│              │   Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ Lancaster (LNC)                 │[/]   1:30 PM   [dim]│[/]   1:32 PM   [dim]│              │              │   Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ Philadelphia 30th Street (PHL)  │[/]   2:45 PM   [dim]│[/]   2:55 PM   [dim]│              │              │   Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ⋮  │[/] [dim italic][1 later stops omitted][/]         [dim]│             │             │              │              │                │[/] [magenta]│[/]
+[magenta]│[/] [dim]└─────┴─────────────────────────────────┴─────────────┴─────────────┴──────────────┴──────────────┴────────────────┘[/] [magenta]│[/]
+[magenta]│                                                                                                                      │[/]  (×35)
+[magenta]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]

@@ -10,3 +10,5 @@ venv
 dist
 build
 plans/
+.coverage
+mutants/

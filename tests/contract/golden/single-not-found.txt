@@ -1,0 +1,16 @@
+# argv: amtrak-status 42 --once
+# exit: 0
+# requests: /v3/trains/42
+# sleeps: -
+# ------------------------------------------------------------
+[yellow]╭──────────────────────────────────────────────────[/] [bold yellow]Train Not Found[/] [yellow]───────────────────────────────────────────────────╮[/]
+[yellow]│[/] [bold yellow]Train #42 not found.[/]                                                                                                 [yellow]│[/]
+[yellow]│                                                                                                                      │[/]
+[yellow]│[/] [white]This could mean:[/]                                                                                                     [yellow]│[/]
+[yellow]│[/] [dim]• The train hasn't started its journey today[/]                                                                         [yellow]│[/]
+[yellow]│[/] [dim]• The train number is incorrect[/]                                                                                      [yellow]│[/]
+[yellow]│[/] [dim]• The train has completed its journey[/]                                                                                [yellow]│[/]
+[yellow]│                                                                                                                      │[/]
+[yellow]│[/] [white]Try checking the train number or wait for the train to depart.[/]                                                       [yellow]│[/]
+[yellow]│                                                                                                                      │[/]  (×50)
+[yellow]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]

@@ -1,0 +1,18 @@
+# argv: amtrak-status 42 171 --once --connection PHL
+# exit: 0
+# requests: /v3/trains/42, /v3/trains/171, /v3/stations/PHL, /v3/trains/42, /v3/trains/171
+# sleeps: 1, 1
+# ------------------------------------------------------------
+[dim]Fetching train data[/][dim yellow]...[/]
+[yellow]Neither train is active yet.[/]
+[dim]Fetching schedule from PHL[/][dim yellow]...[/]
+[yellow]No schedule found for trains at PHL[/]
+[green]✓ Connection station: PHL[/]
+[yellow]╭───────────────────────────────────────────────[/] [bold yellow]Waiting for Train Data[/] [yellow]───────────────────────────────────────────────╮[/]
+[yellow]│ Train #42: Not found or awaiting departure                                                                           │[/]
+[yellow]│ Train #171: Not found or awaiting departure                                                                          │[/]
+[yellow]│                                                                                                                      │[/]
+[yellow]│[/] [dim]Both trains need to be active for connection tracking.[/]                                                               [yellow]│[/]
+[yellow]│[/] [dim]Try again once at least one train has departed.[/]                                                                      [yellow]│[/]
+[yellow]│                                                                                                                      │[/]  (×53)
+[yellow]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]

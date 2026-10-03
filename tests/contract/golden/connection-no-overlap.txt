@@ -1,0 +1,8 @@
+# argv: amtrak-status 42 171 --once
+# exit: 1
+# requests: /v3/trains/42, /v3/trains/171
+# sleeps: -
+# ------------------------------------------------------------
+[dim]Fetching train data[/][dim yellow]...[/]
+[red]No overlapping stations found between these trains.[/]
+[dim]These trains don't share any stations. Use single-train tracking instead.[/]

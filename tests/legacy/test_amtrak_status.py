@@ -10,8 +10,7 @@ from rich.layout import Layout
 
 import amtrak_status.tracker as tracker
 
-# Shared helpers from conftest (imported explicitly for use in test code)
-from conftest import (
+from legacy_helpers import (
     make_station, make_train, to_iso, FIXED_NOW,
     sample_journey_stations, render_to_text, journey_at_phase,
 )

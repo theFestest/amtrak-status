@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 import amtrak_status.tracker as tracker
-from conftest import (
+from legacy_helpers import (
     load_fixture,
     make_mock_httpx_client,
     render_to_text,

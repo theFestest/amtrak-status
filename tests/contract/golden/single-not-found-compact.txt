@@ -1,0 +1,6 @@
+# argv: amtrak-status 42 --once --compact
+# exit: 0
+# requests: /v3/trains/42
+# sleeps: -
+# ------------------------------------------------------------
+[yellow]🚂 Train #42 not found[/]

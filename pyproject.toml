@@ -25,10 +25,13 @@ amtrak-status = "amtrak_status.tracker:main"
 
 [dependency-groups]
 dev = [
-    "pytest"
+    "pytest",
+    "time-machine>=3.5.1",
 ]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+xfail_strict = true
 markers = [
     "coincidence: test that passes due to coincidental behavior, not correct logic",
 ]

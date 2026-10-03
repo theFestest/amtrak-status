@@ -1,0 +1,25 @@
+# argv: amtrak-status 42 --once
+# exit: 0
+# requests: /v3/trains/42
+# sleeps: -
+# ------------------------------------------------------------
+[cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
+[cyan]│[/] [bold white]🚂 Pennsylvanian[/] [bold dim white]#42 (42-8)[/]                                                                                          [cyan]│[/]
+[cyan]│[/] [bold white]Next: Pittsburgh[/] [bold dim white]@ 7:25 AM (sched)[/]                                                                                   [cyan]│[/]
+[cyan]│[/] [bold white]Heading: — @ —[/]                      [white]Predeparture[/]                                                                     [cyan]│[/]
+[cyan]│[/] [bold white]Destination: New York Penn[/]                                                                                           [cyan]│[/]
+[cyan]│                                                                                                                      │[/]  (×3)
+[cyan]╰──────────────────────────────[/] [dim cyan]Updated: 11:00:00 | Refresh: 30s | Press Ctrl+C to quit[/] [cyan]───────────────────────────────╯[/]
+[blue]╭──────────────────────────────────────────────────[/] [bold blue]Journey Progress[/] [blue]──────────────────────────────────────────────────╮[/]
+[blue]│[/] [bold blue]Pittsburgh[/] [color(237)]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/] [bold blue]New York Penn[/]   [magenta]0%[/]                                               [blue]│[/]
+[blue]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
+[magenta]╭──────────────────────────────────────[/] [bold magenta]Stations[/] [dim magenta](green=actual, cyan=estimated)[/] [magenta]───────────────────────────────────────╮[/]
+[magenta]│[/] [dim]┏━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓[/] [magenta]│[/]
+[magenta]│[/] [dim]┃     ┃[/] [bold magenta]Station[/]                  [dim]┃[/]   [bold magenta]Sch Arr[/]    [dim]┃[/]   [bold magenta]Sch Dep[/]    [dim]┃[/]  [bold magenta]Act/Est Arr[/]   [dim]┃[/]  [bold magenta]Act/Est Dep[/]   [dim]┃[/]     [bold magenta]Status[/]      [dim]┃[/] [magenta]│[/]
+[magenta]│[/] [dim]┡━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ Pittsburgh (PGH)         │[/]   7:25 AM    [dim]│[/]   7:30 AM    [dim]│                │                │    Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ Harrisburg (HBG)         │[/]   12:45 PM   [dim]│[/]   12:55 PM   [dim]│                │                │    Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ New York Penn (NYP)      │[/]   4:30 PM    [dim]│              │                │                │    Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]└─────┴──────────────────────────┴──────────────┴──────────────┴────────────────┴────────────────┴─────────────────┘[/] [magenta]│[/]
+[magenta]│                                                                                                                      │[/]  (×39)
+[magenta]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]

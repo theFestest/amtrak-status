@@ -1,0 +1,6 @@
+# argv: amtrak-status 42 --once --compact
+# exit: 0
+# requests: /v3/trains/42
+# sleeps: -
+# ------------------------------------------------------------
+[bold]🚂 Pennsylvanian #42[/] | [green]ALT[/]→55%→[cyan]HUN[/] (20m) @ 11:20 AM [red]+5m[/] | 62mph | 50% [yellow]| On Time[/] [dim]| Updated 11:00:00[/]

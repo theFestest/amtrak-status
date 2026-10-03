@@ -1,0 +1,6 @@
+# argv: amtrak-status 42 --once --compact
+# exit: 0
+# requests: /v3/trains/42, /v3/trains/42, /v3/trains/42
+# sleeps: 2, 4
+# ------------------------------------------------------------
+[red]🚂 Train #42 error: HTTP 503[/]

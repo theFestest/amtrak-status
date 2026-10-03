@@ -1,0 +1,30 @@
+# argv: amtrak-status 42 --once
+# exit: 0
+# requests: /v3/trains/42
+# sleeps: -
+# ------------------------------------------------------------
+[cyan]╭───────────────────────────────────────────────────[/] [bold cyan]Amtrak Status[/] [cyan]────────────────────────────────────────────────────╮[/]
+[cyan]│[/] [bold white]🚂 Pennsylvanian[/] [bold dim white]#42 (42-8)[/]                                                                                          [cyan]│[/]
+[cyan]│[/] [bold white]Next: Harrisburg[/] [bold dim white]@ 12:50 PM[/] [bold dim red](+5m)[/]                                                                                    [cyan]│[/]
+[cyan]│[/] [bold white]Heading: E @ 55 mph[/]                               [green]On Time[/]                                                            [cyan]│[/]
+[cyan]│[/] [bold white]Position: GBG[/] [bold green]███████████[/][bold dim white]░░░░░░░░░[/] [bold white]HBG[/] [bold dim white](110 min)[/]                                                                     [cyan]│[/]
+[cyan]│[/] [bold white]Destination: New York Penn[/]                                                                                           [cyan]│[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]│                                                                                                                      │[/]
+[cyan]╰──────────────────────────────[/] [dim cyan]Updated: 11:00:00 | Refresh: 30s | Press Ctrl+C to quit[/] [cyan]───────────────────────────────╯[/]
+[blue]╭──────────────────────────────────────────────────[/] [bold blue]Journey Progress[/] [blue]──────────────────────────────────────────────────╮[/]
+[blue]│[/] [bold blue]Pittsburgh[/] [green]━━━━━━━━━━━━━━━━[/][color(237)]╺━━━━━━━━━━━━━━━━━━━━━━━[/] [bold blue]New York Penn[/]  [magenta]40%[/]                                               [blue]│[/]
+[blue]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
+[magenta]╭──────────────────────────────────────[/] [bold magenta]Stations[/] [dim magenta](green=actual, cyan=estimated)[/] [magenta]───────────────────────────────────────╮[/]
+[magenta]│[/] [dim]┏━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓[/] [magenta]│[/]
+[magenta]│[/] [dim]┃     ┃[/] [bold magenta]Station[/]                         [dim]┃[/]   [bold magenta]Sch Arr[/]   [dim]┃[/]   [bold magenta]Sch Dep[/]   [dim]┃[/] [bold magenta]Act/Est Arr[/]  [dim]┃[/] [bold magenta]Act/Est Dep[/]  [dim]┃[/]     [bold magenta]Status[/]     [dim]┃[/] [magenta]│[/]
+[magenta]│[/] [dim]┡━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [green]✓[/]  [dim]│[/] [green]Pittsburgh (PGH)[/]                [dim]│[/]   7:25 AM   [dim]│[/]   7:30 AM   [dim]│[/]   [green]7:25 AM[/]    [dim]│[/]   [green]7:31 AM[/]    [dim]│[/]    [dim green]Departed[/]    [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [green]✓[/]  [dim]│[/] [green]Greensburg (GBG)[/]                [dim]│[/]   8:15 AM   [dim]│[/]   8:17 AM   [dim]│              │              │[/]    [dim green]Departed[/]    [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│[/]  [bold yellow]→[/]  [dim]│[/] [bold yellow]Harrisburg (HBG)[/]                [dim]│[/]  12:45 PM   [dim]│[/]  12:55 PM   [dim]│[/]   [cyan]12:50 PM[/]   [dim]│              │[/]  [bold yellow]Enroute (Plt[/]  [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│     │                                 │             │             │              │              │[/]      [bold yellow]5B)[/]       [dim]│[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ Philadelphia 30th Street (PHL)  │[/]   2:45 PM   [dim]│[/]   2:55 PM   [dim]│              │              │   Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]│  ○  │ New York Penn (NYP)             │[/]   4:30 PM   [dim]│             │              │              │   Scheduled    │[/] [magenta]│[/]
+[magenta]│[/] [dim]└─────┴─────────────────────────────────┴─────────────┴─────────────┴──────────────┴──────────────┴────────────────┘[/] [magenta]│[/]
+[magenta]│                                                                                                                      │[/]  (×36)
+[magenta]╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]

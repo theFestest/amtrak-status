@@ -1,14 +1,11 @@
-"""Shared test fixtures and helpers for amtrak-status tests."""
+"""Shared test data builders and helpers for the white-box tests in this directory."""
 
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
-import pytest
 from rich.console import Console
-
-import amtrak_status.tracker as tracker
 
 
 # =============================================================================
@@ -18,38 +15,6 @@ import amtrak_status.tracker as tracker
 
 # A fixed "now" for deterministic time-based tests
 FIXED_NOW = datetime(2025, 3, 15, 14, 30, 0)
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture(autouse=True)
-def reset_globals():
-    """Reset all module-level globals between tests."""
-    tracker.COMPACT_MODE = False
-    tracker.STATION_FROM = None
-    tracker.STATION_TO = None
-    tracker.FOCUS_CURRENT = True
-    tracker.NOTIFY_STATIONS = set()
-    tracker.NOTIFY_ALL = False
-    tracker._notified_stations = set()
-    tracker._notifications_initialized = False
-    tracker.CONNECTION_STATION = None
-    tracker._last_successful_data = None
-    tracker._last_fetch_time = None
-    tracker._last_error = None
-    tracker._train_caches = {}
-    tracker.REFRESH_INTERVAL = 30
-    yield
-
-
-@pytest.fixture(autouse=True)
-def freeze_time():
-    """Patch tracker._now to return FIXED_NOW for deterministic tests."""
-    with patch("amtrak_status.tracker._now", return_value=FIXED_NOW):
-        yield
 
 
 # =============================================================================
@@ -153,7 +118,7 @@ def render_to_text(renderable, width=120) -> str:
 
 def load_fixture(name: str):
     """Load a JSON fixture file from tests/fixtures/."""
-    fixture_path = Path(__file__).parent / "fixtures" / name
+    fixture_path = Path(__file__).parent.parent / "fixtures" / name
     with open(fixture_path) as f:
         return json.load(f)
 
