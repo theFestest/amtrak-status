@@ -92,20 +92,23 @@ This tool uses the [Amtraker API](https://api-v3.amtraker.com), a community-buil
 
 ## Development
 
-To contribute to this library, first checkout the code. Then create a new virtual environment:
+This project uses [uv](https://docs.astral.sh/uv/). To set up a development environment with the test dependencies and run the tests:
 ```bash
 cd amtrak-status
-python -m venv venv
-source venv/bin/activate
+uv sync
+uv run pytest
 ```
-Now install the dependencies and test dependencies:
-```bash
-python -m pip install -e '.[test]'
-```
-To run the tests:
-```bash
-python -m pytest
-```
+
+The tests are split in two:
+
+- `tests/contract/` drive the real `amtrak-status` command against a fake API and a frozen clock, and compare everything it does (screen output with colours, HTTP requests, sleeps, notifications) with the golden files in `tests/contract/golden/`. They never import the package's internals, so they keep passing, unchanged, while the code is reorganised. If you change the output on purpose, regenerate the golden files and review the diff:
+  ```bash
+  UPDATE_GOLDEN=1 uv run pytest tests/contract
+  git diff tests/contract/golden
+  ```
+- `tests/legacy/` are white-box tests of the current `tracker.py` functions. They will be migrated alongside the refactor described in [docs/refactor-design.md](docs/refactor-design.md).
+
+Known bugs are listed in [docs/known-bugs.md](docs/known-bugs.md). Most have a strict `xfail` test in `tests/contract/test_known_bugs.py`, which will fail the run (by passing unexpectedly) once the bug is fixed.
 
 ## License
 
